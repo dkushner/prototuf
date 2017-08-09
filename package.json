@@ -5,9 +5,10 @@
   "main": "index.js",
   "scripts": {
     "build": "npm run compile && npm run lint",
-    "watch": "concurrently -k -p \"[{name}]\" -n \"compile,test\" -c \"yellow.bold,cyan.bold\" \"npm run watch-ts\" \"npm run test\"",
+    "watch": "concurrently -k -p \"[{name}]\" -n \"compile,test\" -c \"yellow.bold,cyan.bold\" \"npm run watch:compile\" \"npm run watch:test\"",
     "compile": "tsc",
-    "watch-ts": "tsc -w",
+    "watch:compile": "tsc -w",
+    "watch:test": "jest --watchAll",
     "test": "jest --forceExit",
     "lint": "tslint -c tslint.json -p tsconfig.json"
   },
@@ -31,11 +32,18 @@
   "license": "ISC",
   "devDependencies": {
     "@types/jest": "^20.0.6",
+    "@types/lodash": "^4.14.71",
     "@types/node": "^8.0.19",
     "concurrently": "^3.5.0",
     "jest": "^20.0.4",
     "ts-jest": "^20.0.10",
     "tslint": "^5.6.0",
     "typescript": "^2.4.2"
+  },
+  "dependencies": {
+    "clime": "^0.5.1",
+    "lodash": "^4.17.4",
+    "protobufjs": "^6.8.0",
+    "resolve": "^1.4.0"
   }
 }
