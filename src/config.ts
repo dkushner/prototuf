@@ -1,7 +1,7 @@
 import { RuleSeverity } from './rule';
 import { FatalError } from './error';
+import { IOptions } from './rule';
 import * as fs from 'fs';
-import * as resolve from 'resolve';
 import * as path from 'path';
 
 export interface IConfiguration {

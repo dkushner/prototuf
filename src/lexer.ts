@@ -9,7 +9,8 @@ export const enum NumericFlags {
     None = 0,
     Scientific = 1 << 1,        // e.g. `10e2`
     Octal = 1 << 2,             // e.g. `0777`
-    Hex = 1 << 3      // e.g. `0x00000000`
+    Hex = 1 << 3,                // e.g. `0x00000000`
+    Float = 1 << 4              // e.g. 0.1234
 }
 
 function isSingleLineWhitespace(character: number): boolean {
@@ -41,11 +42,44 @@ function isOctalDigit(character: number): boolean {
     return (character >= CharacterCodes.Zero) && (character <= CharacterCodes.Seven);
 }
 
+function isIdentifierStart(character: number): boolean {
+    return (character >= CharacterCodes.A && character <= CharacterCodes.Z) ||
+        (character >= CharacterCodes.CapitalA && character <= CharacterCodes.CapitalZ);
+}
+
+function isIdentifierPart(character: number): boolean {
+    return (character === CharacterCodes.Underscore) ||
+        (character >= CharacterCodes.A && character <= CharacterCodes.Z) ||
+        (character >= CharacterCodes.CapitalA && character <= CharacterCodes.CapitalZ) ||
+        (character >= CharacterCodes.Zero && character <= CharacterCodes.Nine);
+}
+
+function utf16EncodeAsString(codePoint: number): string {
+    if (codePoint <= 65535) {
+        return String.fromCharCode(codePoint);
+    }
+
+    const codeUnit1 = Math.floor((codePoint - 65536) / 1024) + 0xD800;
+    const codeUnit2 = ((codePoint - 65536) % 1024) + 0xDC00;
+
+    return String.fromCharCode(codeUnit1, codeUnit2);
+}
+
+const TEXT_TO_TOKEN: Map<string, SyntaxType> = new Map([
+    ['{', SyntaxType.OpenBraceToken],
+    ['}', SyntaxType.CloseBraceToken],
+    ['[', SyntaxType.OpenBracketToken],
+    [']', SyntaxType.CloseBracketToken],
+    ['(', SyntaxType.OpenBraceToken],
+    [')', SyntaxType.CloseBraceToken],
+]);
+
+
 export interface ErrorHandler {
     (message: string): void;
 }
 
-export class Lexer {
+export default class Lexer {
     private text: string;
     private target: SyntaxTarget;
     private skipTrivia: boolean;
@@ -68,7 +102,7 @@ export class Lexer {
         this.target = target;
         this.skipTrivia = skipTrivia;
         this.errorHandler = errorHandler;
-        this.setText(text, start, length);
+        this.setText(text);
     }
 
     public getStartPosition(): number {
@@ -173,6 +207,9 @@ export class Lexer {
                 case CharacterCodes.Minus:
                     this.position++;
                     return this.token = SyntaxType.MinusToken;
+                case CharacterCodes.Plus:
+                    this.position++;
+                    return this.token = SyntaxType.PlusToken;
                 case CharacterCodes.Dot:
                     if (isDecimal(this.text.charCodeAt(this.position + 1))) {
                         this.tokenValue = this.scanNumber();
@@ -262,7 +299,11 @@ export class Lexer {
                 case CharacterCodes.Seven:
                 case CharacterCodes.Eight:
                 case CharacterCodes.Nine:
-                    this.tokenValue = this.scanDecimal();
+                    // Well, we're not octal or hex so we're either floating point or decimal.
+                    this.tokenValue = this.scanNumber();
+                    if (this.numericFlags === NumericFlags.Scientific || this.numericFlags === NumericFlags.Float) {
+                        return this.token = SyntaxType.FloatLiteral;
+                    }
                     return this.token = SyntaxType.DecimalLiteral;
                 case CharacterCodes.Semicolon:
                     this.position++;
@@ -295,7 +336,7 @@ export class Lexer {
                             this.position++;
                         }
                         this.tokenValue = this.text.substring(this.tokenPosition, this.position);
-                        return this.token = this.getIdentifierToken();
+                        return this.token = SyntaxType.Identifier;
                     }
 
                     if (isSingleLineWhitespace(character)) {
@@ -316,16 +357,14 @@ export class Lexer {
         }
     }
 
-    public scanDecimal(): string {
-
-    }
-
     public scanOctalDigits(): number {
-        const start = this.position;
+        let value = 0;
         while (isOctalDigit(this.text.charCodeAt(this.position))) {
+            const character = this.text.charCodeAt(this.position);
+            value = value * 8 + character - CharacterCodes.Zero;
             this.position++;
         }
-        return +(this.text.substring(start, this.position));
+        return value;
     }
 
     public scanHexDigits(count: number, exact = false): number {
@@ -359,6 +398,7 @@ export class Lexer {
         }
 
         if (this.text.charCodeAt(this.position) === CharacterCodes.Dot) {
+            this.numericFlags = NumericFlags.Float;
             this.position++;
             while (isDecimal(this.text.charCodeAt(this.position)))
                 this.position++;
@@ -389,21 +429,88 @@ export class Lexer {
     public getText(): string {
         return this.text;
     }
+
     public setText(text: string, start?: number, length?: number): void {
-        this.text = text;
-        this.end = length === undefined ? text.length : start + length;
+        this.text = text || '';
+        this.end = (length === undefined) ? this.text.length : start + length;
         this.setTextPosition(start || 0);
     }
-    public setSyntaxTarget(target: SyntaxTarget): void { }
-    public setTextPosition(position: number): void { }
-    public lookAhead<T>(callback: () => T): T { }
-    public scanRange<T>(start: number, length: number, callback: () => T): T { }
-    public tryScan<T>(callback: () => T): T { }
+
+    public setSyntaxTarget(target: SyntaxTarget): void {
+        this.target = target;
+    }
+
+    public setTextPosition(position: number): void {
+        this.position = position;
+        this.startPosition = position;
+        this.tokenPosition = position;
+        this.token = SyntaxType.Unknown;
+        this.precedingLineBreak = false;
+        this.tokenValue = undefined;
+        this.extendedEscape = false;
+        this.unterminated = false;
+    }
+
+    public lookAhead<T>(callback: () => T): T {
+        return this.stateGuard(callback, true);
+    }
+
+    public scanRange<T>(start: number, length: number, callback: () => T): T {
+        const end = this.end;
+        const position = this.position;
+        const startPosition = this.startPosition;
+        const tokenPosition = this.tokenPosition;
+        const token = this.token;
+        const precedingLineBreak = this.precedingLineBreak;
+        const tokenValue = this.tokenValue;
+        const extendedEscape = this.extendedEscape;
+        const unterminated = this.unterminated;
+
+        this.setText(this.text, start, length);
+        const result = callback();
+
+        this.end = end;
+        this.position = position;
+        this.startPosition = startPosition;
+        this.tokenPosition = tokenPosition;
+        this.token = token;
+        this.precedingLineBreak = precedingLineBreak;
+        this.tokenValue = tokenValue;
+        this.extendedEscape = extendedEscape;
+        this.unterminated = unterminated;
+
+        return result;
+    }
+
+    public tryScan<T>(callback: () => T): T {
+        return this.stateGuard(callback, false);
+    }
 
     private error(message: string): void {
         if (this.errorHandler) {
             this.errorHandler(message);
         }
+    }
+
+    private stateGuard<T>(callback: () => T, restore: boolean): T {
+        const position = this.position;
+        const startPosition = this.startPosition;
+        const tokenPosition = this.tokenPosition;
+        const token = this.token;
+        const tokenValue = this.tokenValue;
+        const precedingLineBreak = this.precedingLineBreak;
+        const result = callback();
+
+        if (!result || restore) {
+            this.position = position;
+            this.startPosition = startPosition;
+            this.tokenPosition = tokenPosition;
+            this.token = token;
+            this.tokenValue = tokenValue;
+            this.precedingLineBreak = precedingLineBreak;
+        }
+
+        return result;
     }
 
     private scanString(allowEscapes = true): string {
@@ -415,7 +522,7 @@ export class Lexer {
 
         while (true) {
             if (this.position >= this.end) {
-                result += text.substring(start, this.position);
+                result += this.text.substring(start, this.position);
                 this.unterminated = true;
                 this.error(`unterminated string literal`);
                 continue;
@@ -430,7 +537,7 @@ export class Lexer {
 
             if (character === CharacterCodes.Backslash && allowEscapes) {
                 result += this.text.substring(start, this.position);
-                result += scanEscapeSequence();
+                result += this.scanEscapeSequence();
                 start = this.position;
                 continue;
             }
@@ -481,11 +588,11 @@ export class Lexer {
                 if (this.position < this.end && this.text.charCodeAt(this.position) === CharacterCodes.OpenBrace) {
                     this.extendedEscape = true;
                     this.position++;
-                    return scanExtendedUnicodeEscape();
+                    return this.scanExtendedUnicodeEscape();
                 }
-                return scanHexEscape(4);
+                return this.scanHexEscape(4);
             case CharacterCodes.X:
-                return scanHexEscape(2);
+                return this.scanHexEscape(2);
             case CharacterCodes.CarriageReturn:
                 if (this.position < this.end && this.text.charCodeAt(this.position) === CharacterCodes.LineFeed) {
                     this.position++;
@@ -497,5 +604,45 @@ export class Lexer {
             default:
                 return String.fromCharCode(character);
         }
+    }
+
+    private scanExtendedUnicodeEscape(): string {
+        const escapedValue = this.scanHexDigits(1);
+        let invalid = false;
+
+        if (escapedValue < 0) {
+            this.error(`hexadecimal digit expected in unicode escape`);
+            invalid = true;
+        } else if (escapedValue > 0x10FFFF) {
+            this.error(`extended unicode escape value must be between 0x0 and 0x10FFFF`);
+            invalid = true;
+        }
+
+        if (this.position >= this.end) {
+            this.error(`unexpected end of text`);
+            invalid = true;
+        } else if (this.text.charCodeAt(this.position) === CharacterCodes.CloseBrace) {
+            this.position++;
+        } else {
+            this.error(`unterminated unicode escape sequence`);
+            invalid = true;
+        }
+
+        if (invalid) {
+            return '';
+        }
+
+        return utf16EncodeAsString(escapedValue);
+    }
+
+    private scanHexEscape(digits: number) {
+        const escapedValue = this.scanHexDigits(digits, true);
+
+        if (escapedValue < 0) {
+            this.error(`hexadecimal digit expected`);
+            return '';
+        }
+
+        return String.fromCharCode(escapedValue);
     }
 }

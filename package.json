@@ -13,9 +13,6 @@
     "lint": "tslint -c tslint.json -p tsconfig.json"
   },
   "jest": {
-    "globals": {
-      "__TS_CONFIG__": "tsconfig.json"
-    },
     "moduleFileExtensions": [
       "ts",
       "js"
@@ -31,6 +28,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/chai": "^4.0.2",
     "@types/jest": "^20.0.6",
     "@types/lodash": "^4.14.71",
     "@types/node": "^8.0.19",
@@ -41,6 +39,7 @@
     "typescript": "^2.4.2"
   },
   "dependencies": {
+    "chai": "^4.1.1",
     "clime": "^0.5.1",
     "lodash": "^4.17.4",
     "protobufjs": "^6.8.0",

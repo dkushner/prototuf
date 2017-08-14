@@ -1,18 +1,46 @@
-import { Command, command, param } from 'clime';
+import { Command, command, param, params, Options, option } from 'clime';
+import Analyzer from '../analyzer';
 import * as path from 'path';
 
 import * as protobuf from 'protobufjs';
+
+export class AnalyzerOptions extends Options {
+    @option({
+        flag: 'c',
+        description: 'location of the prototuf config file'
+    })
+    config: string;
+
+    @option({
+        flag: 'f',
+        description: 'whether or not to apply available fixes to errant rules'
+    })
+    fix: boolean;
+
+    @option({
+        flag: 'p',
+        description: 'run the analyzer on a prototuf project directory with a prototuf.json config file'
+    })
+    project: string;
+
+    @option({
+        flag: 'e',
+        description: 'glob of files to exclude from any analysis'
+    })
+    exclude: string;
+}
 
 @command({
     description: 'analyzes a protobuf repository and enforces style rules'
 })
 export default class extends Command {
     execute(
-        @param({
-            name: 'config',
+        @params({
             type: String,
-            description: 'location of the prototuf config file'
+            description: 'file paths of proto files to analyze'
         })
-        configPath: string
+        protoFiles: string[],
+        options: AnalyzerOptions
     ) { }
 }
+

@@ -149,30 +149,6 @@ export const enum SyntaxType {
     WhitespaceTrivia,
     SingleLineCommentTrivia,
     MultiLineCommentTrivia,
-    // Identifiers
-    Identifier,
-    FullIdentifier,
-    // Literals
-    IntegerLiteral,
-    DecimalLiteral,
-    OctalLiteral,
-    HexLiteral,
-    FloatLiteral,
-    BooleanLiteral,
-    StringLiteral,
-    // Elements
-    EmptyStatement,
-    SyntaxStatement,
-    ImportStatement,
-    PackageStatement,
-    OptionStatement,
-    // Reserved
-    MessageKeyword,
-    OptionKeyword,
-    ReservedKeyword,
-    RepeatedKeyword,
-    EnumKeyword,
-    ServiceKeyword,
     // Tokens
     EndOfFileToken,
     EqualsToken,
@@ -189,13 +165,50 @@ export const enum SyntaxType {
     LessThanToken,
     GreaterThanToken,
     MinusToken,
+    PlusToken,
     CommaToken,
+    // Identifiers
+    Identifier,
+    // Reserved
+    MessageKeyword,
+    OptionKeyword,
+    ReservedKeyword,
+    RepeatedKeyword,
+    EnumKeyword,
+    SyntaxKeyword,
+    OneofKeyword,
+    ServiceKeyword,
+    // Parse Nodes
+    FullIdentifier,
+    // Literals
+    IntegerLiteral,
+    DecimalLiteral,
+    OctalLiteral,
+    HexLiteral,
+    FloatLiteral,
+    BooleanLiteral,
+    StringLiteral,
+    // Elements
+    EmptyStatement,
+    SyntaxDeclaration,
+    ImportStatement,
+    PackageStatement,
+    OptionStatement,
+    // Expression
+    UnaryExpression,
     // Markers
     FirstReserved = MessageKeyword,
-    LastReserved = ServiceKeyword
+    LastReserved = ServiceKeyword,
+    FirstNode = FullIdentifier,
+    LastNode = UnaryExpression
 }
 
 export type Path = string;
+export type UnaryOperator = SyntaxType.PlusToken | SyntaxType.MinusToken;
+
+export interface UnaryExpression extends Expression {
+
+}
 
 export interface Node extends Span {
     kind: SyntaxType;
@@ -213,18 +226,44 @@ export interface Token<Kind extends SyntaxType> extends Node {
     kind: Kind;
 }
 
+export interface Identifier extends Node {
+    kind: SyntaxType.Identifier;
+
+}
+
 // Represents an individual protobuf definition file.
-export interface SourceFile {
+export interface SourceFile extends Declaration {
     kind: SyntaxType.SourceFile;
 
     fileName: string;
     path: Path;
-    endOfFileToken: Token<SyntaxType.EndOfFile>;
+    endOfFileToken: Token<SyntaxType.EndOfFileToken>;
     text: string;
     statements: NodeArray<Statement>;
     packageName: string;
-    syntax: string;
+    syntax: SyntaxDeclaration;
     dependencies: Path[];
+}
+
+export interface Statement extends Node { }
+
+export interface EmptyStatement extends Statement {
+    kind: SyntaxType.EmptyStatement;
+}
+
+export interface Declaration extends Statement { }
+
+export interface Expression extends Node { }
+
+export interface SyntaxDeclaration extends Declaration {
+    kind: SyntaxType.SyntaxDeclaration;
+    version: number;
+}
+
+export interface ImportStatement extends Statement {
+    kind: SyntaxType.ImportStatement;
+    parent?: SourceFile;
+    fileReference: Expression;
 }
 
 export interface Location {
