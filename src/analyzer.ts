@@ -24,7 +24,5 @@ export default class Analyzer {
     private failures: RuleFailure[] = [];
     private fixes: RuleFailure[] = [];
 
-    constructor(options: AnalyzerOptions, project?: Project) {
-
-    }
+    constructor(options: AnalyzerOptions, project?: Project) { }
 }

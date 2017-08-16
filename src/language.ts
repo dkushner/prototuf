@@ -175,13 +175,18 @@ export const enum SyntaxType {
     ReservedKeyword,
     RepeatedKeyword,
     EnumKeyword,
+    WeakKeyword,
+    PublicKeyword,
     SyntaxKeyword,
+    ImportKeyword,
     OneofKeyword,
+    RPCKeyword,
+    PackageKeyword,
+    ReturnsKeyword,
     ServiceKeyword,
     // Parse Nodes
     FullIdentifier,
     // Literals
-    IntegerLiteral,
     DecimalLiteral,
     OctalLiteral,
     HexLiteral,
@@ -190,9 +195,11 @@ export const enum SyntaxType {
     StringLiteral,
     // Elements
     EmptyStatement,
-    SyntaxDeclaration,
+    SyntaxStatement,
     ImportStatement,
     PackageStatement,
+    MessageDeclaration,
+    EnumDeclaration,
     OptionStatement,
     // Expression
     UnaryExpression,
@@ -204,20 +211,91 @@ export const enum SyntaxType {
 }
 
 export type Path = string;
+
+/**
+ * Represents a unary operator.
+ * Only two are valid in the Protobuf language, '+' and '-'.
+ */
 export type UnaryOperator = SyntaxType.PlusToken | SyntaxType.MinusToken;
 
-export interface UnaryExpression extends Expression {
+/**
+ * Represent modifiers used to condition some nodes.
+ */
+export type Modifier = Token<SyntaxType.PublicKeyword> |
+    Token<SyntaxType.WeakKeyword>;
 
+/**
+ * Represents an expression containing a unary operator and a numeric literal operand.
+ * Since Protobuf has no concept of variable binding, unary expressions are only
+ * valid in this circumstance.
+ */
+export interface UnaryExpression extends Expression {
+    kind: SyntaxType.UnaryExpression;
+    operator: UnaryOperator;
+    operand: NumericLiteral;
 }
+
+/**
+ * Represents any expression that yields a literal value.
+ */
+export interface LiteralExpression extends Expression {
+    text: string;
+}
+
+/**
+ * Represents a string literal value.
+ */
+export interface StringLiteral extends LiteralExpression {
+    type: SyntaxType.StringLiteral;
+}
+
+export type NumericType = SyntaxType.FloatLiteral |
+    SyntaxType.DecimalLiteral |
+    SyntaxType.OctalLiteral |
+    SyntaxType.HexLiteral;
+
+/**
+ * Represents a numeric literal value.
+ */
+export interface NumericLiteral extends LiteralExpression {
+    kind: NumericType;
+    value: number;
+}
+
+export interface FloatLiteral extends NumericLiteral {
+    kind: SyntaxType.FloatLiteral;
+}
+
+export interface OctalLiteral extends NumericLiteral {
+    kind: SyntaxType.OctalLiteral;
+}
+
+export interface DecimalLiteral extends NumericLiteral {
+    kind: SyntaxType.DecimalLiteral;
+}
+
+export interface HexLiteral extends NumericLiteral {
+    kind: SyntaxType.HexLiteral;
+}
+
+export interface BooleanLiteral extends LiteralExpression {
+    kind: SyntaxType.BooleanLiteral;
+}
+
+/**
+ * Represents an integer literal value node.
+ */
+export type IntegerLiteral = DecimalLiteral | OctalLiteral | HexLiteral;
+
+/**
+ * Represents a constant value node.
+ */
+export type ConstantExpression = FullIdentifier | IntegerLiteral |
+    StringLiteral | BooleanLiteral | UnaryExpression;
 
 export interface Node extends Span {
     kind: SyntaxType;
-    flags: NodeFlags;
     parent?: Node;
-}
-
-export const enum NodeFlags {
-    None
 }
 
 export interface NodeArray<T extends Node> extends ReadonlyArray<T>, Span { }
@@ -226,9 +304,18 @@ export interface Token<Kind extends SyntaxType> extends Node {
     kind: Kind;
 }
 
-export interface Identifier extends Node {
+export interface Identifier extends Expression {
     kind: SyntaxType.Identifier;
+}
 
+/**
+ * Represents an expression involving a series of identifiers.
+ * For example, some.package.Type or some.package.my_option.
+ */
+export interface FullIdentifier extends Expression {
+    kind: SyntaxType.FullIdentifier;
+    path: Identifier | FullIdentifier;
+    name: Identifier;
 }
 
 // Represents an individual protobuf definition file.
@@ -241,33 +328,79 @@ export interface SourceFile extends Declaration {
     text: string;
     statements: NodeArray<Statement>;
     packageName: string;
-    syntax: SyntaxDeclaration;
-    dependencies: Path[];
+    syntax: SyntaxStatement;
+    dependenies: Path[];
 }
 
+/**
+ * Represents a parse node that states some association between subsequent nodes.
+ */
 export interface Statement extends Node { }
 
+/**
+ * Represents a parse node that simply declares the existence of something.
+ */
+export interface Declaration extends Node { }
+
+/**
+ * Represents a parse node that may be evaluated.
+ */
+export interface Expression { }
+
+/**
+ * Represents a declaration (that it is) and a statement (what it is) in a combined
+ * parse node. Note that it is not an expression because it has no intrinsic value.
+ */
+export interface DeclarationStatement extends Statement, Declaration {
+    name?: Identifier;
+}
+
+export interface PackageDeclaration extends DeclarationStatement {
+}
+
+/**
+ * Parse node representing the declaration of a message type.
+ */
+export interface MessageDeclaration extends DeclarationStatement {
+    kind: SyntaxType.MessageDeclaration;
+}
+
+export interface EnumDeclaration extends DeclarationStatement {
+    kind: SyntaxType.EnumDeclaration;
+}
+
+/**
+ * Represents a null associative statement.
+ */
 export interface EmptyStatement extends Statement {
     kind: SyntaxType.EmptyStatement;
 }
 
-export interface Declaration extends Statement { }
-
-export interface Expression extends Node { }
-
-export interface SyntaxDeclaration extends Declaration {
-    kind: SyntaxType.SyntaxDeclaration;
+/**
+ * Represents the syntax version associated with a file.
+ */
+export interface SyntaxStatement extends Statement {
+    kind: SyntaxType.SyntaxStatement;
     version: number;
 }
 
+/**
+ * Represents an dependency import parse node.
+ */
 export interface ImportStatement extends Statement {
     kind: SyntaxType.ImportStatement;
     parent?: SourceFile;
-    fileReference: Expression;
+    modifier?: Modifier;
+    fileReference: string;
+}
+
+export interface OptionStatement extends Statement {
+    kind: SyntaxType.OptionStatement;
+    name: Identifier | FullIdentifier;
+    constant: ConstantExpression;
 }
 
 export interface Location {
     line: number;
     character: number;
 }
-

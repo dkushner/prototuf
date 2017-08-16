@@ -66,12 +66,16 @@ function utf16EncodeAsString(codePoint: number): string {
 }
 
 const TEXT_TO_TOKEN: Map<string, SyntaxType> = new Map([
-    ['{', SyntaxType.OpenBraceToken],
-    ['}', SyntaxType.CloseBraceToken],
-    ['[', SyntaxType.OpenBracketToken],
-    [']', SyntaxType.CloseBracketToken],
-    ['(', SyntaxType.OpenBraceToken],
-    [')', SyntaxType.CloseBraceToken],
+    ['message', SyntaxType.MessageKeyword],
+    ['option', SyntaxType.OptionKeyword],
+    ['enum', SyntaxType.EnumKeyword],
+    ['syntax', SyntaxType.SyntaxKeyword],
+    ['import', SyntaxType.ImportKeyword],
+    ['rpc', SyntaxType.RPCKeyword],
+    ['returns', SyntaxType.ReturnsKeyword],
+    ['weak', SyntaxType.WeakKeyword],
+    ['public', SyntaxType.PublicKeyword],
+    ['package', SyntaxType.PackageKeyword]
 ]);
 
 
@@ -336,7 +340,7 @@ export default class Lexer {
                             this.position++;
                         }
                         this.tokenValue = this.text.substring(this.tokenPosition, this.position);
-                        return this.token = SyntaxType.Identifier;
+                        return this.token = this.getIdentifierToken();
                     }
 
                     if (isSingleLineWhitespace(character)) {
@@ -484,6 +488,15 @@ export default class Lexer {
 
     public tryScan<T>(callback: () => T): T {
         return this.stateGuard(callback, false);
+    }
+
+    private getIdentifierToken(): SyntaxType {
+        const keyword = TEXT_TO_TOKEN.get(this.getTokenValue());
+        if (!keyword) {
+            return SyntaxType.Identifier;
+        } else {
+            return keyword;
+        }
     }
 
     private error(message: string): void {

@@ -1,5 +1,6 @@
 import Lexer, { SyntaxTarget } from './lexer';
-import { Node, Identifier, SyntaxDeclaration, SourceFile, SyntaxType, Token } from './language';
+import { Node, Statement, Identifier, SyntaxStatement, SourceFile, SyntaxType, Token } from './language';
+import { EmptyStatement, EnumDeclaration, MessageDeclaration, OptionStatement } from './language';
 
 const enum ParsingContext {
     SourceElements,
@@ -14,10 +15,14 @@ export default class Parser {
     private context: ParsingContext;
     private nodeCount: number;
 
-    constructor(fileName: string, sourceText: string) {
+    constructor(sourceText: string) {
         this.lexer = new Lexer(SyntaxTarget.PROTO3, true);
         this.lexer.setText(sourceText, 0, sourceText.length);
+
         this.nodeCount = 0;
+
+        // Prime the parser.
+        this.nextToken();
     }
 
     public token(): SyntaxType {
@@ -32,12 +37,19 @@ export default class Parser {
         console.error(message);
     }
 
-    public parse(): SourceFile {
+    public parseSourceFile(fileName: string): SourceFile {
         const sourceFile = <SourceFile>this.createNode(SyntaxType.SourceFile, 0);
         this.context = ParsingContext.SourceElements;
 
-        this.nextToken();
+        sourceFile.fileName = fileName;
+
+        // The first statement must always be a syntax declaration.
         sourceFile.syntax = this.parseSyntaxDeclaration();
+        this.nextToken();
+
+        while (this.token() !== SyntaxType.EndOfFileToken) {
+            const statement = this.parseStatement();
+        }
 
         this.finishNode(sourceFile);
         return sourceFile;
@@ -49,6 +61,53 @@ export default class Parser {
 
     public lookAhead<T>(callback: () => T): T {
         return this.stateGuard(callback, true);
+    }
+
+    private parseStatement(): Statement {
+        switch (this.token()) {
+            case SyntaxType.OptionKeyword:
+                return this.parseOptionStatement();
+            case SyntaxType.PackageKeyword:
+                return this.parsePackageDeclaration();
+            case SyntaxType.MessageKeyword:
+                return this.parseMessageDeclaration();
+            case SyntaxType.EnumKeyword:
+                return this.parseEnumDeclaration();
+            case SyntaxType.SemicolonToken:
+                return this.parseEmptyStatement();
+            default:
+                throw new Error(`unexpected token ${this.token()} while parsing statements`);
+        }
+    }
+
+    private parseEnumDeclaration(): EnumDeclaration {
+        const enumDeclaration = <EnumDeclaration>this.createNode(SyntaxType.EnumDeclaration, this.lexer.getStartPosition());
+        this.finishNode(enumDeclaration, this.lexer.getTextPosition());
+        return enumDeclaration;
+
+    }
+
+    private parseOptionStatement(): OptionStatement {
+        const optionStatement = <OptionStatement>this.createNode(SyntaxType.OptionStatement, this.lexer.getStartPosition());
+        this.finishNode(optionStatement, this.lexer.getTextPosition());
+        return optionStatement;
+    }
+
+    private parseMessageDeclaration(): MessageDeclaration {
+        const messageDeclaration = <MessageDeclaration>this.createNode(SyntaxType.MessageDeclaration, this.lexer.getStartPosition());
+        this.finishNode(messageDeclaration, this.lexer.getTextPosition());
+        return messageDeclaration;
+    }
+
+    private parsePackageDeclaration(): PackageDeclaration {
+
+    }
+
+    private parseEmptyStatement(): EmptyStatement {
+        const emptyStatement = <EmptyStatement>this.createNode(SyntaxType.EmptyStatement, this.lexer.getTextPosition());
+        this.parseExpected(SyntaxType.SemicolonToken);
+        this.finishNode(emptyStatement, this.lexer.getTextPosition());
+        return emptyStatement;
     }
 
     private stateGuard<T>(callback: () => T, restore: boolean): T {
@@ -66,21 +125,21 @@ export default class Parser {
     }
 
     private parseExpected(kind: SyntaxType, advance = true): boolean {
-        console.log(this.token());
         if (this.token() === kind) {
             if (advance) {
                 this.nextToken();
             }
             return true;
         }
-        return false;
+
+        throw new Error(`unexpected token ${this.token()}, expected ${kind}`);
+        // return false;
     }
 
-    private parseSyntaxDeclaration(): SyntaxDeclaration {
-        const syntaxStatement = <SyntaxDeclaration>this.createNode(SyntaxType.SyntaxDeclaration, this.lexer.getTextPosition());
+    private parseSyntaxDeclaration(): SyntaxStatement {
+        const syntaxStatement = <SyntaxStatement>this.createNode(SyntaxType.SyntaxStatement, this.lexer.getTokenPosition());
         this.parseExpected(SyntaxType.SyntaxKeyword);
         this.parseExpected(SyntaxType.EqualsToken);
-
 
         if (this.token() === SyntaxType.StringLiteral) {
             const syntax = this.lexer.getTokenValue();
@@ -99,6 +158,7 @@ export default class Parser {
             throw new Error(`expected valid syntax mode string`);
         }
 
+        this.nextToken();
         this.parseExpected(SyntaxType.SemicolonToken);
         return this.finishNode(syntaxStatement);
     }
