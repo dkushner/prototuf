@@ -75,7 +75,9 @@ const TEXT_TO_TOKEN: Map<string, SyntaxType> = new Map([
     ['returns', SyntaxType.ReturnsKeyword],
     ['weak', SyntaxType.WeakKeyword],
     ['public', SyntaxType.PublicKeyword],
-    ['package', SyntaxType.PackageKeyword]
+    ['package', SyntaxType.PackageKeyword],
+    ['true', SyntaxType.TrueKeyword],
+    ['false', SyntaxType.FalseKeyword]
 ]);
 
 

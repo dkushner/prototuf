@@ -177,13 +177,33 @@ export const enum SyntaxType {
     EnumKeyword,
     WeakKeyword,
     PublicKeyword,
+    StreamKeyword,
     SyntaxKeyword,
     ImportKeyword,
     OneofKeyword,
+    TrueKeyword,
+    FalseKeyword,
     RPCKeyword,
     PackageKeyword,
     ReturnsKeyword,
     ServiceKeyword,
+    MapKeyword,
+    DoubleKeyword,
+    FloatKeyword,
+    Int32Keyword,
+    Int64Keyword,
+    Uint32Keyword,
+    Uint64Keyword,
+    Sint32Keyword,
+    Sint64Keyword,
+    Fixed32Keyword,
+    Fixed64Keyword,
+    Sfixed32Keyword,
+    Sfixed64Keyword,
+    BoolKeyword,
+    StringKeyword,
+    MaxKeyword,
+    BytesKeyword,
     // Parse Nodes
     FullIdentifier,
     // Literals
@@ -198,209 +218,425 @@ export const enum SyntaxType {
     SyntaxStatement,
     ImportStatement,
     PackageStatement,
-    MessageDeclaration,
-    EnumDeclaration,
+    MessageDefinition,
+    ServiceDefinition,
+    EnumDefinition,
+    EnumFieldStatement,
+    MapFieldStatement,
+    FieldStatement,
     OptionStatement,
-    // Expression
-    UnaryExpression,
+    OneofStatement,
+    ReservedStatement,
+    Range,
+    OneofFieldStatement,
+    RPCStatement,
+    FieldOption,
     // Markers
     FirstReserved = MessageKeyword,
-    LastReserved = ServiceKeyword,
+    LastReserved = BytesKeyword,
     FirstNode = FullIdentifier,
-    LastNode = UnaryExpression
-}
-
-export type Path = string;
-
-/**
- * Represents a unary operator.
- * Only two are valid in the Protobuf language, '+' and '-'.
- */
-export type UnaryOperator = SyntaxType.PlusToken | SyntaxType.MinusToken;
-
-/**
- * Represent modifiers used to condition some nodes.
- */
-export type Modifier = Token<SyntaxType.PublicKeyword> |
-    Token<SyntaxType.WeakKeyword>;
-
-/**
- * Represents an expression containing a unary operator and a numeric literal operand.
- * Since Protobuf has no concept of variable binding, unary expressions are only
- * valid in this circumstance.
- */
-export interface UnaryExpression extends Expression {
-    kind: SyntaxType.UnaryExpression;
-    operator: UnaryOperator;
-    operand: NumericLiteral;
+    LastNode = FieldOption
 }
 
 /**
- * Represents any expression that yields a literal value.
+ * Baes abstraction for parse nodes.
  */
-export interface LiteralExpression extends Expression {
-    text: string;
-}
-
-/**
- * Represents a string literal value.
- */
-export interface StringLiteral extends LiteralExpression {
-    type: SyntaxType.StringLiteral;
-}
-
-export type NumericType = SyntaxType.FloatLiteral |
-    SyntaxType.DecimalLiteral |
-    SyntaxType.OctalLiteral |
-    SyntaxType.HexLiteral;
-
-/**
- * Represents a numeric literal value.
- */
-export interface NumericLiteral extends LiteralExpression {
-    kind: NumericType;
-    value: number;
-}
-
-export interface FloatLiteral extends NumericLiteral {
-    kind: SyntaxType.FloatLiteral;
-}
-
-export interface OctalLiteral extends NumericLiteral {
-    kind: SyntaxType.OctalLiteral;
-}
-
-export interface DecimalLiteral extends NumericLiteral {
-    kind: SyntaxType.DecimalLiteral;
-}
-
-export interface HexLiteral extends NumericLiteral {
-    kind: SyntaxType.HexLiteral;
-}
-
-export interface BooleanLiteral extends LiteralExpression {
-    kind: SyntaxType.BooleanLiteral;
-}
-
-/**
- * Represents an integer literal value node.
- */
-export type IntegerLiteral = DecimalLiteral | OctalLiteral | HexLiteral;
-
-/**
- * Represents a constant value node.
- */
-export type ConstantExpression = FullIdentifier | IntegerLiteral |
-    StringLiteral | BooleanLiteral | UnaryExpression;
-
 export interface Node extends Span {
     kind: SyntaxType;
+    modifiers?: NodeArray<Modifier>;
     parent?: Node;
 }
 
+export type Modifier = Token<SyntaxType.PublicKeyword> |
+    Token<SyntaxType.WeakKeyword> |
+    Token<SyntaxType.RepeatedKeyword> |
+    Token<SyntaxType.PlusToken> |
+    Token<SyntaxType.MinusToken>;
+
+/**
+ * Represents an immutable collection of nodes.
+ */
 export interface NodeArray<T extends Node> extends ReadonlyArray<T>, Span { }
 
-export interface Token<Kind extends SyntaxType> extends Node {
-    kind: Kind;
+/**
+ * Undecorated token parse node.
+ */
+export interface Token<TKind extends SyntaxType> extends Node {
+    kind: TKind;
 }
 
-export interface Identifier extends Expression {
+/**
+ * Represents an identifier parse node.
+ */
+export interface Identifier extends Node {
     kind: SyntaxType.Identifier;
-}
-
-/**
- * Represents an expression involving a series of identifiers.
- * For example, some.package.Type or some.package.my_option.
- */
-export interface FullIdentifier extends Expression {
-    kind: SyntaxType.FullIdentifier;
-    path: Identifier | FullIdentifier;
-    name: Identifier;
-}
-
-// Represents an individual protobuf definition file.
-export interface SourceFile extends Declaration {
-    kind: SyntaxType.SourceFile;
-
-    fileName: string;
-    path: Path;
-    endOfFileToken: Token<SyntaxType.EndOfFileToken>;
     text: string;
-    statements: NodeArray<Statement>;
-    packageName: string;
-    syntax: SyntaxStatement;
-    dependenies: Path[];
 }
 
 /**
- * Represents a parse node that states some association between subsequent nodes.
+ * Represents a full identifier of the form 'some.ident.chain'.
  */
-export interface Statement extends Node { }
-
-/**
- * Represents a parse node that simply declares the existence of something.
- */
-export interface Declaration extends Node { }
-
-/**
- * Represents a parse node that may be evaluated.
- */
-export interface Expression { }
-
-/**
- * Represents a declaration (that it is) and a statement (what it is) in a combined
- * parse node. Note that it is not an expression because it has no intrinsic value.
- */
-export interface DeclarationStatement extends Statement, Declaration {
-    name?: Identifier;
-}
-
-export interface PackageDeclaration extends DeclarationStatement {
+export interface FullIdentifier extends Node {
+    kind: SyntaxType.FullIdentifier;
+    left?: Identifier | FullIdentifier;
+    right: Identifier;
 }
 
 /**
- * Parse node representing the declaration of a message type.
+ * Identifier for a message declaration.
  */
-export interface MessageDeclaration extends DeclarationStatement {
-    kind: SyntaxType.MessageDeclaration;
-}
-
-export interface EnumDeclaration extends DeclarationStatement {
-    kind: SyntaxType.EnumDeclaration;
+export interface MessageName extends Identifier {
+    _messageNameBrand: any;
 }
 
 /**
- * Represents a null associative statement.
+ * Identifier for an enum declaration.
+ */
+export interface EnumName extends Identifier {
+    _enumNameBrand: any;
+}
+
+/**
+ * Identifier for a field.
+ */
+export interface FieldName extends Identifier {
+    _fieldNameBrand: any;
+}
+
+/**
+ * Identifier for a oneof declaration.
+ */
+export interface OneofName extends Identifier {
+    _oneofNameBrand: any;
+}
+
+/**
+ * Identifier for a map field.
+ */
+export interface MapName extends Identifier {
+    _mapNameBrand: any;
+}
+
+/**
+ * Identifier for a service declaration.
+ */
+export interface ServiceName extends Identifier {
+    _serviceNameBrand: any;
+}
+
+/**
+ * Identier for an RPC method declaration.
+ */
+export interface RPCName extends Identifier {
+    _rpcNameBrand: any;
+}
+
+/**
+ * Type identifier for a message type.
+ */
+export interface MessageType extends FullIdentifier {
+    _messageTypeBrand: any;
+}
+
+/**
+ * Type identifier for an enum type.
+ */
+export interface EnumType extends FullIdentifier {
+    _enumTypeBrand: any;
+}
+
+/**
+ * Literal value parse node.
+ */
+export interface Literal extends Node {
+    text: string;
+    isUnterminated?: boolean;
+}
+
+/**
+ * String literal value parse node.
+ */
+export interface StringLiteral extends Literal {
+    kind: SyntaxType.StringLiteral;
+}
+
+/**
+ * Decimal literal value parse node.
+ */
+export interface DecimalLiteral extends Literal {
+    kind: SyntaxType.DecimalLiteral;
+}
+
+/**
+ * Octal literal value parse node.
+ */
+export interface OctalLiteral extends Literal {
+    kind: SyntaxType.OctalLiteral;
+}
+
+/**
+ * Hex literal value parse node.
+ */
+export interface HexLiteral extends Literal {
+    kind: SyntaxType.HexLiteral;
+}
+
+export type IntegerLiteral = DecimalLiteral | OctalLiteral | HexLiteral;
+
+/**
+ * Boolean literal value parse node.
+ */
+export interface BooleanLiteral extends Literal {
+    kind: SyntaxType.TrueKeyword | SyntaxType.FalseKeyword;
+}
+
+export interface Statement extends Node {
+    _statementBrand: any;
+}
+
+/**
+ * Syntax version declaration node.
+ */
+export interface SyntaxStatement extends Statement {
+    type: SyntaxType.SyntaxStatement;
+    version: StringLiteral;
+}
+
+/**
+ * Import dependency statement node.
+ */
+export interface ImportStatement extends Statement {
+    type: SyntaxType.ImportStatement;
+    file: StringLiteral;
+}
+
+/**
+ * Package name declaration node.
+ */
+export interface PackageStatement extends Statement {
+    kind: SyntaxType.PackageStatement;
+    name: FullIdentifier;
+}
+
+/**
+ * Constant value parse node.
+ */
+export type Constant = FullIdentifier | IntegerLiteral | StringLiteral | BooleanLiteral;
+
+/**
+ * Option statement node.
+ */
+export interface OptionStatement extends Statement {
+    kind: SyntaxType.OptionStatement;
+    name: FullIdentifier;
+    value: Constant;
+}
+
+export interface Type extends Node {
+    _typeNodeBrand: any;
+}
+
+/**
+ * Defines a known type declaration as part of a field.
+ */
+export interface KnownType extends Type {
+    kind: SyntaxType.DoubleKeyword |
+        SyntaxType.FloatKeyword |
+        SyntaxType.Int32Keyword |
+        SyntaxType.Int64Keyword |
+        SyntaxType.Uint32Keyword |
+        SyntaxType.Uint64Keyword |
+        SyntaxType.Sint32Keyword |
+        SyntaxType.Sint64Keyword |
+        SyntaxType.Fixed32Keyword |
+        SyntaxType.Fixed64Keyword |
+        SyntaxType.Sfixed32Keyword |
+        SyntaxType.Sfixed64Keyword |
+        SyntaxType.BoolKeyword |
+        SyntaxType.StringKeyword |
+        SyntaxType.BytesKeyword;
+}
+
+export interface KeyType extends Type {
+    kind: SyntaxType.Int32Keyword |
+        SyntaxType.Int64Keyword |
+        SyntaxType.Uint32Keyword |
+        SyntaxType.Uint64Keyword |
+        SyntaxType.Sint32Keyword |
+        SyntaxType.Sint64Keyword |
+        SyntaxType.Fixed32Keyword |
+        SyntaxType.Fixed64Keyword |
+        SyntaxType.Sfixed32Keyword |
+        SyntaxType.Sfixed64Keyword |
+        SyntaxType.BoolKeyword |
+        SyntaxType.StringKeyword;
+}
+
+/**
+ * Field statement declration node.
+ */
+export interface FieldStatement extends Statement {
+    kind: SyntaxType.FieldStatement;
+
+    type: KnownType | MessageType | EnumType;
+    name: FieldName;
+    number: IntegerLiteral;
+    options: NodeArray<FieldOption>;
+}
+
+/**
+ * Field option declaration as part of a field statement.
+ */
+export interface FieldOption extends Node {
+    kind: SyntaxType.FieldOption;
+    name: FullIdentifier;
+    value: Constant;
+}
+
+/**
+ * Oneof statement within a message.
+ */
+export interface OneofStatement extends Statement {
+    kind: SyntaxType.OneofStatement;
+    name: OneofName;
+    fields: NodeArray<OneofFieldStatement>;
+}
+
+/**
+ * Field statement node contained in a oneof statement.
+ */
+export interface OneofFieldStatement extends Statement {
+    kind: SyntaxType.OneofFieldStatement;
+
+    type: KnownType | MessageType | EnumType;
+
+    name: FieldName;
+    number: IntegerLiteral;
+    options: NodeArray<FieldOption>;
+}
+
+export interface MapFieldStatement extends Statement {
+    kind: SyntaxType.MapFieldStatement;
+    key: KeyType;
+    type: KnownType | MessageType | EnumType;
+    name: FieldName;
+    number: IntegerLiteral;
+    options: NodeArray<FieldOption>;
+}
+
+/**
+ * Reserved statement parse node.
+ * May specify either a list of ranges or field names.
+ */
+export interface ReservedStatement extends Statement {
+    kind: SyntaxType.ReservedStatement;
+    ranges: NodeArray<Range> | NodeArray<FieldName>;
+}
+
+/**
+ * Node representing a range that is part of a reserved statement.
+ * For example '1 to 11' or '5'.
+ */
+export interface Range extends Node {
+    kind: SyntaxType.Range;
+    startIndex: IntegerLiteral;
+    endIndex?: IntegerLiteral | Token<SyntaxType.MaxKeyword>;
+}
+
+/**
+ * Represents an empty statement.
  */
 export interface EmptyStatement extends Statement {
     kind: SyntaxType.EmptyStatement;
 }
 
 /**
- * Represents the syntax version associated with a file.
+ * Abstract parse node representing a top level definition.
  */
-export interface SyntaxStatement extends Statement {
-    kind: SyntaxType.SyntaxStatement;
-    version: number;
+export interface TopLevelDefinition extends Statement {
+    _topLevelDefinitionBrand: any;
 }
 
 /**
- * Represents an dependency import parse node.
+ * Represents an enumeration definition.
  */
-export interface ImportStatement extends Statement {
-    kind: SyntaxType.ImportStatement;
-    parent?: SourceFile;
-    modifier?: Modifier;
-    fileReference: string;
+export interface EnumDefinition extends TopLevelDefinition {
+    kind: SyntaxType.EnumDefinition;
+    name: EnumName;
+    body: NodeArray<OptionStatement | EnumFieldStatement | EmptyStatement>;
 }
 
-export interface OptionStatement extends Statement {
-    kind: SyntaxType.OptionStatement;
-    name: Identifier | FullIdentifier;
-    constant: ConstantExpression;
+/**
+ * Represents the declaration of an enumeration field.
+ */
+export interface EnumFieldStatement extends Statement {
+    kind: SyntaxType.EnumFieldStatement;
+    name: Identifier;
+    number: IntegerLiteral;
+
+    options: NodeArray<FieldOption>;
 }
 
-export interface Location {
-    line: number;
-    character: number;
+/**
+ * Utility union type to represent valid statements for the body of a message.
+ */
+export type MessageBodyStatement = OptionStatement |
+    OneofStatement |
+    FieldStatement |
+    EnumDefinition |
+    MessageDefinition |
+    MapFieldStatement |
+    ReservedStatement |
+    EmptyStatement;
+
+
+/**
+ * Represents a message type definition.
+ */
+export interface MessageDefinition extends TopLevelDefinition {
+    kind: SyntaxType.MessageDefinition;
+    name: MessageName;
+    body: NodeArray<MessageBodyStatement>;
+}
+
+/**
+ * Represents a service type definition.
+ */
+export interface ServiceDefinition extends TopLevelDefinition {
+    kind: SyntaxType.ServiceDefinition;
+    name: ServiceName;
+    body: NodeArray<OptionStatement | RPCStatement | EmptyStatement>;
+}
+
+
+/**
+ * Represents an RPC statement as part of a service.
+ */
+export interface RPCStatement extends Statement {
+    kind: SyntaxType.RPCStatement;
+    name: RPCName;
+    sendType: MessageType;
+
+    receiveType: MessageType;
+    body?: NodeArray<OptionStatement | EmptyStatement>;
+}
+
+/**
+ * Utility union type representing valid statements for the root level of a source file.
+ */
+export type SourceFileStatement = ImportStatement | PackageStatement | OptionStatement | TopLevelDefinition | EmptyStatement;
+
+/**
+ * Represents a single source file parse unit.
+ */
+export interface SourceFile extends Node {
+    kind: SyntaxType.SourceFile;
+
+    fileName: string;
+    path: string;
+    endOfFileToken: Token<SyntaxType.EndOfFileToken>;
+    text: string;
+    syntax: SyntaxStatement;
+    statements: NodeArray<SourceFileStatement>;
+    dependenies: string[];
 }

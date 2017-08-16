@@ -17,21 +17,24 @@ describe('parser', () => {
         assert.equal('syntax = "proto3";', span);
     });
 
-    it('parses top level statements correctly', () => {
+    it('parses top level definitions correctly', () => {
         const sample = `
             syntax = "proto3";
-            package whatever.package;
-
-            option (something.my_option) = -1.5e-7;
 
             message TestMessage {
                 option my_message = 0877;
 
                 enum TestEnum {
-                    UNKNOWN,
-                    PASS,
-                    FAIL
+                    UNKNOWN = 0,
+                    PASS = 1,
+                    FAIL = 2
                 }
+            }
+
+            enum OtherEnum {
+                UNKNOWN = 0,
+                FOO = 1,
+                BAR = 2
             }
         `;
 
