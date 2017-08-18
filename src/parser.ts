@@ -1,6 +1,12 @@
 import Lexer, { SyntaxTarget } from './lexer';
-import { Node, Statement, Identifier, SyntaxStatement, SourceFile, SyntaxType, Token } from './language';
-import { EmptyStatement, EnumDeclaration, MessageDeclaration, OptionStatement } from './language';
+import {
+    Node, NodeArray, Statement, Identifier, FullIdentifier, SourceFile, Modifier, SyntaxType, Token,
+    SourceFileStatement, SyntaxStatement, EmptyStatement, OptionStatement, PackageStatement,
+    EnumDefinition, MessageDefinition, Literal, Constant, StringLiteral, DecimalLiteral, BooleanLiteral,
+    HexLiteral, IntegerLiteral, OctalLiteral, FloatLiteral, MessageName, MessageBodyStatement,
+    TopLevelDefinition, FieldStatement, KnownType, TypeReference, FieldName, EnumFieldStatement, EnumName,
+    EnumBodyStatement
+} from './language';
 
 const enum ParsingContext {
     SourceElements,
@@ -8,7 +14,46 @@ const enum ParsingContext {
     EnumMembers
 }
 
+export function isMessageBodyStatement(node: Node): node is MessageBodyStatement {
+    return node.kind === SyntaxType.OneofStatement ||
+        node.kind === SyntaxType.OptionStatement ||
+        node.kind === SyntaxType.FieldStatement ||
+        node.kind === SyntaxType.EnumDefinition ||
+        node.kind === SyntaxType.MessageDefinition ||
+        node.kind === SyntaxType.MapFieldStatement ||
+        node.kind === SyntaxType.ReservedStatement ||
+        node.kind === SyntaxType.EmptyStatement;
+}
 
+export function isTopLevelDefinition(node: Node): node is TopLevelDefinition {
+    return node.kind === SyntaxType.EnumDefinition ||
+        node.kind === SyntaxType.ServiceDefinition ||
+        node.kind === SyntaxType.MessageDefinition;
+}
+
+export function isSourceFileStatement(node: Node): node is SourceFileStatement {
+    return node.kind === SyntaxType.ImportStatement ||
+        node.kind === SyntaxType.PackageStatement ||
+        node.kind === SyntaxType.OptionStatement ||
+        node.kind === SyntaxType.EmptyStatement ||
+        isTopLevelDefinition(node);
+}
+
+export function isIntegerLiteral(node: Node): node is IntegerLiteral {
+    return node.kind === SyntaxType.DecimalLiteral ||
+        node.kind === SyntaxType.OctalLiteral ||
+        node.kind === SyntaxType.HexLiteral;
+}
+
+export function isKnownType(node: Node): node is KnownType {
+    return (node.kind >= SyntaxType.FirstKnown) && (node.kind <= SyntaxType.LastKnown);
+}
+
+/**
+ * Implements a Protobuf parser.
+ * Note that if you are implementing a parser function, you must advance the cursor after
+ * you have completed parsing your node by calling either parseExpected or nextToken.
+ */
 export default class Parser {
     private lexer: Lexer;
     private currentToken: SyntaxType;
@@ -45,11 +90,17 @@ export default class Parser {
 
         // The first statement must always be a syntax declaration.
         sourceFile.syntax = this.parseSyntaxDeclaration();
-        this.nextToken();
 
+        const statements: SourceFileStatement[] = [];
         while (this.token() !== SyntaxType.EndOfFileToken) {
             const statement = this.parseStatement();
+            if (!isSourceFileStatement(statement)) {
+                throw new Error(`expected source level statement but got ${statement.kind}`);
+            }
+            statements.push(statement);
         }
+
+        sourceFile.statements = this.createNodeArray(statements);
 
         this.finishNode(sourceFile);
         return sourceFile;
@@ -59,7 +110,7 @@ export default class Parser {
         return this.stateGuard(callback, false);
     }
 
-    public lookAhead<T>(callback: () => T): T {
+    public <T>(callback: () => T): T {
         return this.stateGuard(callback, true);
     }
 
@@ -68,11 +119,11 @@ export default class Parser {
             case SyntaxType.OptionKeyword:
                 return this.parseOptionStatement();
             case SyntaxType.PackageKeyword:
-                return this.parsePackageDeclaration();
+                return this.parsePackageStatement();
             case SyntaxType.MessageKeyword:
-                return this.parseMessageDeclaration();
+                return this.parseMessageDefinition();
             case SyntaxType.EnumKeyword:
-                return this.parseEnumDeclaration();
+                return this.parseEnumDefinition();
             case SyntaxType.SemicolonToken:
                 return this.parseEmptyStatement();
             default:
@@ -80,34 +131,287 @@ export default class Parser {
         }
     }
 
-    private parseEnumDeclaration(): EnumDeclaration {
-        const enumDeclaration = <EnumDeclaration>this.createNode(SyntaxType.EnumDeclaration, this.lexer.getStartPosition());
-        this.finishNode(enumDeclaration, this.lexer.getTextPosition());
-        return enumDeclaration;
+    private parseMessageBodyStatement(): Statement {
+        switch (this.token()) {
+            case SyntaxType.OptionKeyword:
+                return this.parseOptionStatement();
+            case SyntaxType.EnumKeyword:
+                return this.parseEnumDefinition();
+            case SyntaxType.MessageKeyword:
+                return this.parseMessageDefinition();
+            case SyntaxType.RepeatedKeyword:
+            case SyntaxType.Identifier:
+            case SyntaxType.DotToken:
+            case SyntaxType.DoubleKeyword:
+            case SyntaxType.FloatKeyword:
+            case SyntaxType.Int32Keyword:
+            case SyntaxType.Int64Keyword:
+            case SyntaxType.Uint32Keyword:
+            case SyntaxType.Uint64Keyword:
+            case SyntaxType.Sint32Keyword:
+            case SyntaxType.Sint64Keyword:
+            case SyntaxType.Fixed32Keyword:
+            case SyntaxType.Fixed64Keyword:
+            case SyntaxType.Sfixed32Keyword:
+            case SyntaxType.Sfixed64Keyword:
+            case SyntaxType.BoolKeyword:
+            case SyntaxType.StringKeyword:
+            case SyntaxType.BytesKeyword:
+                return this.parseFieldStatement();
+            case SyntaxType.OneofKeyword:
+                // return this.parseOneofStatement();
+            case SyntaxType.MapKeyword:
+                // return this.parseMapFieldStatement();
+            case SyntaxType.SemicolonToken:
+                return this.parseEmptyStatement();
+            default:
+                throw new Error(`expected start of message body statement but got ${this.token()}`);
+        }
+    }
 
+    private parseEnumBodyStatement(): Statement {
+        switch (this.token()) {
+            case SyntaxType.OptionKeyword:
+                return this.parseOptionStatement();
+            case SyntaxType.Identifier:
+                return this.parseEnumFieldStatement();
+            case SyntaxType.SemicolonToken:
+                return this.parseEmptyStatement();
+            default:
+                throw new Error(`expected start of enum body statement but got ${this.token()}`);
+        }
+    }
+
+    private parseEnumFieldStatement(): EnumFieldStatement {
+        const enumFieldStatement = <EnumFieldStatement>this.createNode(SyntaxType.FieldStatement, this.lexer.getTokenPosition());
+
+        enumFieldStatement.name = this.parseIdentifier();
+        this.parseExpected(SyntaxType.EqualsToken);
+
+        const value = this.parseLiteral();
+        if (!isIntegerLiteral(value)) {
+            throw new Error(`enum field number must be an integer value`);
+        }
+        enumFieldStatement.number = value as IntegerLiteral;
+
+        this.parseExpected(SyntaxType.SemicolonToken);
+
+        this.finishNode(enumFieldStatement);
+        return enumFieldStatement;
+    }
+
+    private parseFieldStatement(): FieldStatement {
+        const fieldStatement = <FieldStatement>this.createNode(SyntaxType.FieldStatement, this.lexer.getTokenPosition());
+
+        if (this.token() === SyntaxType.RepeatedKeyword) {
+            const modifier = <Modifier>this.createNode(SyntaxType.RepeatedKeyword, this.lexer.getTokenPosition());
+            this.parseExpected(SyntaxType.RepeatedKeyword);
+            this.finishNode(modifier);
+
+            fieldStatement.modifiers = this.createNodeArray([modifier]);
+        }
+
+        if (this.token() === SyntaxType.Identifier || this.token() === SyntaxType.DotToken) {
+            fieldStatement.type = <TypeReference>this.parseFullIdentifier();
+        } else {
+            fieldStatement.type = <KnownType>this.parseKnownType();
+        }
+
+        fieldStatement.name = <FieldName>this.parseIdentifier();
+
+        this.parseExpected(SyntaxType.EqualsToken);
+
+        const fieldNumber = this.parseLiteral();
+
+        if (!isIntegerLiteral(fieldNumber)) {
+            throw new Error(`invalid field number type ${fieldNumber.kind}`);
+        }
+
+        fieldStatement.number = fieldNumber;
+        this.parseExpected(SyntaxType.SemicolonToken);
+        this.finishNode(fieldStatement);
+        return fieldStatement;
+    }
+
+    private parseKnownType(): KnownType {
+        const knownType = <KnownType>this.createNode(this.token(), this.lexer.getTokenPosition());
+        if (!isKnownType(knownType)) {
+            throw new Error(`expected known type but got ${this.token()}`);
+        }
+
+        this.nextToken();
+        this.finishNode(knownType);
+        return knownType;
+    }
+
+    private parsePackageStatement(): PackageStatement {
+        const packageStatement = <PackageStatement>this.createNode(SyntaxType.PackageStatement, this.lexer.getStartPosition());
+        this.parseExpected(SyntaxType.PackageKeyword);
+
+        packageStatement.name = this.parseFullIdentifier();
+        this.parseExpected(SyntaxType.SemicolonToken);
+
+        this.finishNode(packageStatement);
+        return packageStatement;
+    }
+
+    private parseFullIdentifier(): FullIdentifier {
+        const fullIdentifier = <FullIdentifier>this.createNode(SyntaxType.FullIdentifier, this.lexer.getStartPosition());
+
+        if (this.token() === SyntaxType.DotToken) {
+            this.parseExpected(SyntaxType.DotToken);
+        }
+
+        const qualifiers = [];
+        let current: Identifier;
+        do {
+            current = this.parseIdentifier();
+
+            if (this.token() == SyntaxType.DotToken) {
+                this.parseExpected(SyntaxType.DotToken);
+                qualifiers.push(current);
+            }
+        } while (this.token() === SyntaxType.Identifier || this.lexer.isReservedWord());
+
+        fullIdentifier.qualifiers = this.createNodeArray(qualifiers);
+        fullIdentifier.terminal = current;
+
+        this.finishNode(fullIdentifier);
+        return fullIdentifier;
+    }
+
+    private parseIdentifier(): Identifier {
+        const identifier = <Identifier>this.createNode(SyntaxType.Identifier, this.lexer.getTokenPosition());
+        // If we are expecting to parse an identifier, reserved words are perfectly valid.
+        if (this.token() !== SyntaxType.Identifier && !this.lexer.isReservedWord()) {
+            throw new Error(`expected identifier but received ${this.token()}`);
+        }
+
+        identifier.text = this.lexer.getTokenText();
+        this.finishNode(identifier);
+        this.nextToken();
+        return identifier;
+    }
+
+    private parseEnumDefinition(): EnumDefinition {
+        const enumDefinition = <EnumDefinition>this.createNode(SyntaxType.EnumDefinition, this.lexer.getTokenPosition());
+
+        this.parseExpected(SyntaxType.EnumKeyword);
+        enumDefinition.name = <EnumName>this.parseIdentifier();
+        this.parseExpected(SyntaxType.OpenBraceToken);
+
+        const statements = [];
+        while (this.token() !== SyntaxType.CloseBraceToken) {
+            const statement = this.parseEnumBodyStatement();
+            statements.push(<EnumBodyStatement>statement);
+        }
+        this.parseExpected(SyntaxType.CloseBraceToken);
+
+        enumDefinition.body = this.createNodeArray(statements);
+
+        this.finishNode(enumDefinition);
+        return enumDefinition;
     }
 
     private parseOptionStatement(): OptionStatement {
-        const optionStatement = <OptionStatement>this.createNode(SyntaxType.OptionStatement, this.lexer.getStartPosition());
-        this.finishNode(optionStatement, this.lexer.getTextPosition());
+        const optionStatement = <OptionStatement>this.createNode(SyntaxType.OptionStatement, this.lexer.getTokenPosition());
+        this.parseExpected(SyntaxType.OptionKeyword);
+
+        // If option name includes an extension identifier, parse it.
+        if (this.token() === SyntaxType.OpenParenToken) {
+            this.parseExpected(SyntaxType.OpenParenToken);
+            optionStatement.extension = this.parseFullIdentifier();
+            this.parseExpected(SyntaxType.CloseParenToken);
+        }
+
+        // If we have a subsequent identifier after an extension, skip the joining
+        // dot and parse the ident into the name field.
+        if (optionStatement.extension && this.token() === SyntaxType.DotToken) {
+            this.parseExpected(SyntaxType.DotToken);
+        }
+        optionStatement.name = this.parseFullIdentifier();
+
+        this.parseExpected(SyntaxType.EqualsToken);
+
+        optionStatement.value = this.parseConstant();
+
+        this.parseExpected(SyntaxType.SemicolonToken);
+        this.finishNode(optionStatement);
         return optionStatement;
     }
 
-    private parseMessageDeclaration(): MessageDeclaration {
-        const messageDeclaration = <MessageDeclaration>this.createNode(SyntaxType.MessageDeclaration, this.lexer.getStartPosition());
-        this.finishNode(messageDeclaration, this.lexer.getTextPosition());
-        return messageDeclaration;
+    private parseConstant(): Constant {
+        // Check for sign modifier at lead of constant to signal numeric literal.
+        let modifier: Modifier;
+        if (this.token() === SyntaxType.PlusToken || this.token() === SyntaxType.MinusToken) {
+            modifier = <Modifier>this.createNode(this.token(), this.lexer.getStartPosition());
+
+            const valid = this.lookAhead(() => {
+                const token = this.nextToken();
+                return token === SyntaxType.FloatLiteral || token === SyntaxType.OctalLiteral ||
+                    token === SyntaxType.HexLiteral || token === SyntaxType.DecimalLiteral;
+            });
+
+            if (!valid) {
+                throw new Error(`invalid modifier '${this.lexer.getTokenText()} for non-numeric constant`);
+            }
+
+            this.finishNode(modifier, this.lexer.getTextPosition());
+            this.nextToken();
+        }
+
+        let constant: Constant;
+        switch (this.token()) {
+            case SyntaxType.FloatLiteral:
+            case SyntaxType.OctalLiteral:
+            case SyntaxType.HexLiteral:
+            case SyntaxType.DecimalLiteral:
+            case SyntaxType.TrueKeyword:
+            case SyntaxType.FalseKeyword:
+            case SyntaxType.StringLiteral:
+                constant = <Constant>this.parseLiteral();
+                break;
+            case SyntaxType.Identifier:
+                constant = <Constant>this.parseFullIdentifier();
+                break;
+            default:
+                throw new Error(`unexpected token ${this.token()} in constant expression`);
+        }
+
+        constant.modifiers = modifier ? this.createNodeArray([modifier]) : undefined;
+        this.finishNode(constant);
+        return constant;
     }
 
-    private parsePackageDeclaration(): PackageDeclaration {
+    private parseMessageDefinition(): MessageDefinition {
+        const messageDefinition = <MessageDefinition>this.createNode(SyntaxType.MessageDefinition, this.lexer.getTokenPosition());
 
+        this.parseExpected(SyntaxType.MessageKeyword);
+        messageDefinition.name = <MessageName>this.parseIdentifier();
+        this.parseExpected(SyntaxType.OpenBraceToken);
+
+        const statements = [];
+        while (this.token() !== SyntaxType.CloseBraceToken) {
+            const statement = this.parseMessageBodyStatement();
+            statements.push(<MessageBodyStatement>statement);
+        }
+        this.parseExpected(SyntaxType.CloseBraceToken);
+
+        messageDefinition.body = this.createNodeArray(statements);
+
+        this.finishNode(messageDefinition);
+        return messageDefinition;
     }
 
     private parseEmptyStatement(): EmptyStatement {
-        const emptyStatement = <EmptyStatement>this.createNode(SyntaxType.EmptyStatement, this.lexer.getTextPosition());
+        const emptyStatement = <EmptyStatement>this.createNode(SyntaxType.EmptyStatement, this.lexer.getStartPosition());
         this.parseExpected(SyntaxType.SemicolonToken);
-        this.finishNode(emptyStatement, this.lexer.getTextPosition());
+        this.finishNode(emptyStatement);
         return emptyStatement;
+    }
+
+    private lookAhead<T>(callback: () => T): T {
+        return this.stateGuard(callback, true);
     }
 
     private stateGuard<T>(callback: () => T, restore: boolean): T {
@@ -136,34 +440,65 @@ export default class Parser {
         // return false;
     }
 
+    private parseLiteral(): Literal {
+        let literal: Literal;
+
+        switch (this.token()) {
+            case SyntaxType.StringLiteral:
+                literal = <StringLiteral>this.createNode(SyntaxType.StringLiteral, this.lexer.getStartPosition());
+                break;
+            case SyntaxType.DecimalLiteral:
+                literal = <DecimalLiteral>this.createNode(SyntaxType.DecimalLiteral, this.lexer.getStartPosition());
+                break;
+            case SyntaxType.OctalLiteral:
+                literal = <OctalLiteral>this.createNode(SyntaxType.OctalLiteral, this.lexer.getStartPosition());
+                break;
+            case SyntaxType.FloatLiteral:
+                literal = <FloatLiteral>this.createNode(SyntaxType.FloatLiteral, this.lexer.getStartPosition());
+                break;
+            case SyntaxType.HexLiteral:
+                literal = <HexLiteral>this.createNode(SyntaxType.HexLiteral, this.lexer.getStartPosition());
+                break;
+            case SyntaxType.TrueKeyword:
+            case SyntaxType.FalseKeyword:
+                literal = <BooleanLiteral>this.createNode(this.token(), this.lexer.getStartPosition());
+                break;
+            default:
+                throw new Error(`could not parse literal from token ${this.token()}`);
+        }
+
+        literal.text = this.lexer.getTokenValue();
+
+        this.finishNode(literal);
+        this.nextToken();
+        return literal;
+    }
+
     private parseSyntaxDeclaration(): SyntaxStatement {
         const syntaxStatement = <SyntaxStatement>this.createNode(SyntaxType.SyntaxStatement, this.lexer.getTokenPosition());
         this.parseExpected(SyntaxType.SyntaxKeyword);
         this.parseExpected(SyntaxType.EqualsToken);
 
         if (this.token() === SyntaxType.StringLiteral) {
-            const syntax = this.lexer.getTokenValue();
-            switch (syntax) {
-                case 'proto3': {
-                    syntaxStatement.version = 3;
-                } break;
-                case 'proto2': {
-                    syntaxStatement.version = 2;
-                } break;
+            const version = <StringLiteral>this.parseLiteral();
+            switch (version.text) {
+                case 'proto3':
+                case 'proto2':
+                    break;
                 default: {
-                    throw new Error(`unrecogninzed syntax mode '${syntax}'`);
+                    throw new Error(`unrecogninzed syntax mode '${version.text}'`);
                 }
             }
+            syntaxStatement.version = version;
         } else {
             throw new Error(`expected valid syntax mode string`);
         }
 
-        this.nextToken();
         this.parseExpected(SyntaxType.SemicolonToken);
         return this.finishNode(syntaxStatement);
     }
 
-    private createNode<Kind extends SyntaxType>(kind: SyntaxType, position?: number): Node | Token<Kind> | Identifier {
+    private createNode< Kind extends SyntaxType>(kind: SyntaxType, position?: number): Node | Token<Kind> | Identifier {
         if (position < 0) {
             position = this.lexer.getStartPosition();
         }
@@ -173,11 +508,26 @@ export default class Parser {
             <Token<Kind>>{ kind, start: position, end: position };
     }
 
+    private createNodeArray<T extends Node>(elements?: ReadonlyArray<T>): NodeArray<T > {
+        if (elements) {
+            if (elements.hasOwnProperty('start') && elements.hasOwnProperty('end')) {
+                return <NodeArray<T>>elements;
+            }
+        } else {
+            elements = [];
+        }
+
+        const array = <NodeArray<T>>elements;
+        array.start = -1;
+        array.end = -1;
+        return array;
+    }
+
     private isNode(kind: SyntaxType): boolean {
         return kind >= SyntaxType.FirstNode && kind <= SyntaxType.LastNode;
     }
 
-    private finishNode<T extends Node>(node: T, end?: number): T {
+    private finishNode < T extends Node > (node: T, end?: number): T {
         node.end = (end === undefined) ? this.lexer.getStartPosition() : end;
         return node;
     }

@@ -202,8 +202,8 @@ export const enum SyntaxType {
     Sfixed64Keyword,
     BoolKeyword,
     StringKeyword,
-    MaxKeyword,
     BytesKeyword,
+    MaxKeyword,
     // Parse Nodes
     FullIdentifier,
     // Literals
@@ -233,9 +233,11 @@ export const enum SyntaxType {
     FieldOption,
     // Markers
     FirstReserved = MessageKeyword,
-    LastReserved = BytesKeyword,
+    LastReserved = MaxKeyword,
     FirstNode = FullIdentifier,
-    LastNode = FieldOption
+    LastNode = FieldOption,
+    FirstKnown = DoubleKeyword,
+    LastKnown = BytesKeyword
 }
 
 /**
@@ -278,8 +280,8 @@ export interface Identifier extends Node {
  */
 export interface FullIdentifier extends Node {
     kind: SyntaxType.FullIdentifier;
-    left?: Identifier | FullIdentifier;
-    right: Identifier;
+    qualifiers?: NodeArray<Identifier>;
+    terminal: Identifier;
 }
 
 /**
@@ -334,15 +336,8 @@ export interface RPCName extends Identifier {
 /**
  * Type identifier for a message type.
  */
-export interface MessageType extends FullIdentifier {
-    _messageTypeBrand: any;
-}
-
-/**
- * Type identifier for an enum type.
- */
-export interface EnumType extends FullIdentifier {
-    _enumTypeBrand: any;
+export interface TypeReference extends FullIdentifier {
+    _typeReferenceBrand: any;
 }
 
 /**
@@ -381,6 +376,13 @@ export interface HexLiteral extends Literal {
     kind: SyntaxType.HexLiteral;
 }
 
+/**
+ * Literal floating point value parse node.
+ */
+export interface FloatLiteral extends Literal {
+    kind: SyntaxType.FloatLiteral;
+}
+
 export type IntegerLiteral = DecimalLiteral | OctalLiteral | HexLiteral;
 
 /**
@@ -398,7 +400,7 @@ export interface Statement extends Node {
  * Syntax version declaration node.
  */
 export interface SyntaxStatement extends Statement {
-    type: SyntaxType.SyntaxStatement;
+    kind: SyntaxType.SyntaxStatement;
     version: StringLiteral;
 }
 
@@ -406,7 +408,7 @@ export interface SyntaxStatement extends Statement {
  * Import dependency statement node.
  */
 export interface ImportStatement extends Statement {
-    type: SyntaxType.ImportStatement;
+    kind: SyntaxType.ImportStatement;
     file: StringLiteral;
 }
 
@@ -421,14 +423,22 @@ export interface PackageStatement extends Statement {
 /**
  * Constant value parse node.
  */
-export type Constant = FullIdentifier | IntegerLiteral | StringLiteral | BooleanLiteral;
+export type Constant = FullIdentifier | IntegerLiteral | StringLiteral | BooleanLiteral | FloatLiteral;
 
 /**
  * Option statement node.
+ * Note that if the option name is an extension, then the extension field will include
+ * the full identifier of the extension while the name will include only those parts
+ * following the extension (if any).
+ * '(some.extension).option' will yield:
+ *
+ *      extension := 'some.extension'
+ *      name := 'option'
  */
 export interface OptionStatement extends Statement {
     kind: SyntaxType.OptionStatement;
-    name: FullIdentifier;
+    extension?: FullIdentifier;
+    name?: FullIdentifier;
     value: Constant;
 }
 
@@ -457,7 +467,7 @@ export interface KnownType extends Type {
         SyntaxType.BytesKeyword;
 }
 
-export interface KeyType extends Type {
+export interface KeyType extends KnownType {
     kind: SyntaxType.Int32Keyword |
         SyntaxType.Int64Keyword |
         SyntaxType.Uint32Keyword |
@@ -478,7 +488,7 @@ export interface KeyType extends Type {
 export interface FieldStatement extends Statement {
     kind: SyntaxType.FieldStatement;
 
-    type: KnownType | MessageType | EnumType;
+    type: KnownType | TypeReference;
     name: FieldName;
     number: IntegerLiteral;
     options: NodeArray<FieldOption>;
@@ -508,7 +518,7 @@ export interface OneofStatement extends Statement {
 export interface OneofFieldStatement extends Statement {
     kind: SyntaxType.OneofFieldStatement;
 
-    type: KnownType | MessageType | EnumType;
+    type: KnownType | TypeReference;
 
     name: FieldName;
     number: IntegerLiteral;
@@ -518,7 +528,7 @@ export interface OneofFieldStatement extends Statement {
 export interface MapFieldStatement extends Statement {
     kind: SyntaxType.MapFieldStatement;
     key: KeyType;
-    type: KnownType | MessageType | EnumType;
+    type: KnownType | TypeReference;
     name: FieldName;
     number: IntegerLiteral;
     options: NodeArray<FieldOption>;
@@ -557,13 +567,15 @@ export interface TopLevelDefinition extends Statement {
     _topLevelDefinitionBrand: any;
 }
 
+export type EnumBodyStatement = OptionStatement | EnumFieldStatement | EmptyStatement;
+
 /**
  * Represents an enumeration definition.
  */
 export interface EnumDefinition extends TopLevelDefinition {
     kind: SyntaxType.EnumDefinition;
     name: EnumName;
-    body: NodeArray<OptionStatement | EnumFieldStatement | EmptyStatement>;
+    body: NodeArray<EnumBodyStatement>;
 }
 
 /**
@@ -615,9 +627,9 @@ export interface ServiceDefinition extends TopLevelDefinition {
 export interface RPCStatement extends Statement {
     kind: SyntaxType.RPCStatement;
     name: RPCName;
-    sendType: MessageType;
+    sendType: TypeReference;
 
-    receiveType: MessageType;
+    receiveType: TypeReference;
     body?: NodeArray<OptionStatement | EmptyStatement>;
 }
 
