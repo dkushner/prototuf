@@ -1,0 +1,16 @@
+syntax = "proto3";
+package shipping.service;
+
+import "shipping/shipping.proto";
+
+service Shipping {
+    rpc CreateShipment (CreateShipmentRequest) returns (CreateShipmentResponse);
+}
+
+message CreateShipmentRequest {
+    Shipment shipment = 1;
+}
+
+message CreateShipmentResponse {
+    string shipment_id = 1;
+}

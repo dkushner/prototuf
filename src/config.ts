@@ -293,6 +293,16 @@ function resolveConfigurationPath(filePath: string, relativeTo?: string) {
     }
 }
 
+/**
+ * Attempt to locate the path of the configuration file.
+ * 
+ * First, if the user has supplied a configuration location, check that it exists and use 
+ * this path. Second, if the user has not provided a location, assume that the config location
+ * is relative to the input file path. 
+ * 
+ * @param supplied the path to the file supplied by the user if provided
+ * @param inputFilePath the 
+ */
 export function findConfigurationPath(supplied: string | null, inputFilePath: string) {
     if (supplied) {
         if (!fs.existsSync(supplied)) {

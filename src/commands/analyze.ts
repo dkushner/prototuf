@@ -40,6 +40,10 @@ export default class extends Command {
             description: 'file paths of proto files to analyze'
         })
         protoFiles: string[],
+        @params({
+            type: String,
+            description: 'files or paths to include in dependency search'
+        })
         options: AnalyzerOptions
     ) { }
 }

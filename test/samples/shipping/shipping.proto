@@ -1,0 +1,17 @@
+syntax = "proto3";
+package shipping;
+
+import "common/common.proto";
+
+message Shipment {
+    common.Person customer = 1;
+    common.Address billing_address = 2;
+    common.Address shipping_address = 3;
+
+    repeated Item items = 4;
+}
+
+message Item {
+    uint32 product_id = 1;
+    uint32 quantity = 2;
+}

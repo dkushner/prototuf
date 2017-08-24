@@ -467,7 +467,7 @@ export interface KnownType extends Type {
         SyntaxType.BytesKeyword;
 }
 
-export interface KeyType extends KnownType {
+export interface KeyType extends Type {
     kind: SyntaxType.Int32Keyword |
         SyntaxType.Int64Keyword |
         SyntaxType.Uint32Keyword |
@@ -503,6 +503,8 @@ export interface FieldOption extends Node {
     value: Constant;
 }
 
+export type OneofFieldStatement = FieldStatement | EmptyStatement;
+
 /**
  * Oneof statement within a message.
  */
@@ -510,19 +512,6 @@ export interface OneofStatement extends Statement {
     kind: SyntaxType.OneofStatement;
     name: OneofName;
     fields: NodeArray<OneofFieldStatement>;
-}
-
-/**
- * Field statement node contained in a oneof statement.
- */
-export interface OneofFieldStatement extends Statement {
-    kind: SyntaxType.OneofFieldStatement;
-
-    type: KnownType | TypeReference;
-
-    name: FieldName;
-    number: IntegerLiteral;
-    options: NodeArray<FieldOption>;
 }
 
 export interface MapFieldStatement extends Statement {
@@ -611,13 +600,15 @@ export interface MessageDefinition extends TopLevelDefinition {
     body: NodeArray<MessageBodyStatement>;
 }
 
+export type ServiceBodyStatement = OptionStatement | RPCStatement | EmptyStatement;
+
 /**
  * Represents a service type definition.
  */
 export interface ServiceDefinition extends TopLevelDefinition {
     kind: SyntaxType.ServiceDefinition;
     name: ServiceName;
-    body: NodeArray<OptionStatement | RPCStatement | EmptyStatement>;
+    body: NodeArray<ServiceBodyStatement>;
 }
 
 

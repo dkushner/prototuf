@@ -5,7 +5,8 @@ import {
     EnumDefinition, MessageDefinition, Literal, Constant, StringLiteral, DecimalLiteral, BooleanLiteral,
     HexLiteral, IntegerLiteral, OctalLiteral, FloatLiteral, MessageName, MessageBodyStatement,
     TopLevelDefinition, FieldStatement, KnownType, TypeReference, FieldName, EnumFieldStatement, EnumName,
-    EnumBodyStatement
+    EnumBodyStatement, OneofStatement, OneofName, OneofFieldStatement, MapFieldStatement, MapName, KeyType,
+    ImportStatement, ServiceDefinition, ServiceName, ServiceBodyStatement, RPCStatement, RPCName, RPCBodyStatement
 } from './language';
 
 const enum ParsingContext {
@@ -43,6 +44,13 @@ export function isIntegerLiteral(node: Node): node is IntegerLiteral {
     return node.kind === SyntaxType.DecimalLiteral ||
         node.kind === SyntaxType.OctalLiteral ||
         node.kind === SyntaxType.HexLiteral;
+}
+
+export function isKeyType(node: Node): node is KeyType {
+    return isKnownType(node) &&
+        node.kind !== SyntaxType.BytesKeyword &&
+        node.kind !== SyntaxType.DoubleKeyword &&
+        node.kind !== SyntaxType.FloatKeyword;
 }
 
 export function isKnownType(node: Node): node is KnownType {
@@ -120,14 +128,18 @@ export default class Parser {
                 return this.parseOptionStatement();
             case SyntaxType.PackageKeyword:
                 return this.parsePackageStatement();
+            case SyntaxType.ImportKeyword:
+                return this.parseImportStatement();
             case SyntaxType.MessageKeyword:
                 return this.parseMessageDefinition();
             case SyntaxType.EnumKeyword:
                 return this.parseEnumDefinition();
             case SyntaxType.SemicolonToken:
                 return this.parseEmptyStatement();
+            case SyntaxType.ServiceKeyword:
+                return this.parseServiceDefinition();
             default:
-                throw new Error(`unexpected token ${this.token()} while parsing statements`);
+                throw new Error(`unexpected token (${this.lexer.getTokenText()}, ${this.token()}) while parsing statements`);
         }
     }
 
@@ -159,14 +171,168 @@ export default class Parser {
             case SyntaxType.BytesKeyword:
                 return this.parseFieldStatement();
             case SyntaxType.OneofKeyword:
-                // return this.parseOneofStatement();
+                return this.parseOneofStatement();
             case SyntaxType.MapKeyword:
-                // return this.parseMapFieldStatement();
+                return this.parseMapFieldStatement();
             case SyntaxType.SemicolonToken:
                 return this.parseEmptyStatement();
             default:
                 throw new Error(`expected start of message body statement but got ${this.token()}`);
         }
+    }
+
+    private parseServiceBodyStatement(): ServiceBodyStatement {
+        switch (this.token()) {
+            case SyntaxType.OptionKeyword:
+                return this.parseOptionStatement();
+            case SyntaxType.SemicolonToken:
+                return this.parseEmptyStatement();
+            case SyntaxType.RPCKeyword:
+                return this.parseRPCStatement();
+            default:
+                throw new Error(`expected start of service body statement but got ${this.token()}`);
+        }
+    }
+
+    private parseRPCBodyStatement(): RPCBodyStatement {
+        switch (this.token()) {
+            case SyntaxType.OptionKeyword:
+                return this.parseOptionStatement();
+            case SyntaxType.SemicolonToken:
+                return this.parseEmptyStatement();
+            default:
+                throw new Error(`expected start of RPC body statement but got ${this.token()}`);
+        }
+    }
+
+    private parseRPCStatement(): RPCStatement {
+        const rpcStatement = <RPCStatement>this.createNode(SyntaxType.RPCStatement, this.lexer.getTokenPosition());
+        this.parseExpected(SyntaxType.RPCKeyword);
+
+        rpcStatement.name = <RPCName>this.parseIdentifier();
+
+        this.parseExpected(SyntaxType.OpenParenToken);
+        if (this.token() === SyntaxType.StreamKeyword) {
+            const modifier = <Modifier>this.createNode(SyntaxType.StreamKeyword, this.lexer.getTokenPosition());
+            this.parseExpected(SyntaxType.StreamKeyword);
+            this.finishNode(modifier);
+
+            const sendType = <TypeReference>this.parseFullIdentifier();
+            sendType.modifiers = this.createNodeArray([modifier]);
+
+            rpcStatement.sendType = sendType;
+        } else {
+            rpcStatement.sendType = <TypeReference>this.parseFullIdentifier();
+        }
+        this.parseExpected(SyntaxType.CloseParenToken);
+
+        this.parseExpected(SyntaxType.ReturnsKeyword);
+
+        this.parseExpected(SyntaxType.OpenParenToken);
+        if (this.token() === SyntaxType.StreamKeyword) {
+            const modifier = <Modifier>this.createNode(SyntaxType.StreamKeyword, this.lexer.getTokenPosition());
+            this.parseExpected(SyntaxType.StreamKeyword);
+            this.finishNode(modifier);
+
+            const receiveType = <TypeReference>this.parseFullIdentifier();
+            receiveType.modifiers = this.createNodeArray([modifier]);
+
+            rpcStatement.receiveType = receiveType;
+        } else {
+            rpcStatement.receiveType = <TypeReference>this.parseFullIdentifier();
+        }
+        this.parseExpected(SyntaxType.CloseParenToken);
+
+        if (this.token() === SyntaxType.OpenBraceToken) {
+            this.parseExpected(SyntaxType.OpenBraceToken);
+            const statements = [];
+            while (this.token() !== SyntaxType.CloseBraceToken) {
+                const statement = this.parseRPCBodyStatement();
+                statements.push(<RPCBodyStatement>statement);
+            }
+            rpcStatement.body = this.createNodeArray(statements);
+            this.parseExpected(SyntaxType.CloseBraceToken);
+        } else {
+            this.parseExpected(SyntaxType.SemicolonToken);
+        }
+
+        this.finishNode(rpcStatement);
+        return rpcStatement;
+    }
+
+    private parseServiceDefinition(): ServiceDefinition {
+        const serviceDefinition = <ServiceDefinition>this.createNode(SyntaxType.ServiceDefinition, this.lexer.getTokenPosition());
+        this.parseExpected(SyntaxType.ServiceKeyword);
+
+        serviceDefinition.name = <ServiceName>this.parseIdentifier();
+        this.parseExpected(SyntaxType.OpenBraceToken);
+
+        const statements = [];
+        while (this.token() !== SyntaxType.CloseBraceToken) {
+            const statement = this.parseServiceBodyStatement();
+            statements.push(<MessageBodyStatement>statement);
+        }
+        this.parseExpected(SyntaxType.CloseBraceToken);
+
+        this.finishNode(serviceDefinition);
+        return serviceDefinition;
+    }
+
+    private parseImportStatement(): ImportStatement {
+        const importStatement = <ImportStatement>this.createNode(SyntaxType.ImportStatement, this.lexer.getTokenPosition());
+
+        this.parseExpected(SyntaxType.ImportKeyword);
+        if (this.token() === SyntaxType.WeakKeyword || this.token() === SyntaxType.PublicKeyword) {
+            const modifier = <Modifier>this.createNode(this.token(), this.lexer.getTokenPosition());
+            this.parseExpected(this.token());
+            this.finishNode(modifier);
+
+            importStatement.modifiers = this.createNodeArray([modifier]);
+        }
+
+        const filePath = this.parseLiteral();
+        if (filePath.kind !== SyntaxType.StringLiteral) {
+            throw new Error(`expected string literal file path but got ${filePath.kind}`);
+        }
+        importStatement.file = <StringLiteral>filePath;
+        this.parseExpected(SyntaxType.SemicolonToken);
+        this.finishNode(importStatement);
+        return importStatement;
+    }
+
+    private parseMapFieldStatement(): MapFieldStatement {
+        const mapField = <MapFieldStatement>this.createNode(SyntaxType.MapFieldStatement, this.lexer.getTokenPosition());
+
+        this.parseExpected(SyntaxType.MapKeyword);
+        this.parseExpected(SyntaxType.LessThanToken);
+
+        const type = this.parseKnownType();
+        if (!isKeyType(type)) {
+            throw new Error(`invalid key type ${type.kind} for map field`);
+        }
+        mapField.key = type;
+
+        this.parseExpected(SyntaxType.CommaToken);
+        if (this.token() === SyntaxType.Identifier || this.token() === SyntaxType.DotToken) {
+            mapField.type = <TypeReference>this.parseFullIdentifier();
+        } else {
+            mapField.type = <KnownType>this.parseKnownType();
+        }
+
+        this.parseExpected(SyntaxType.GreaterThanToken);
+
+        mapField.name = <FieldName>this.parseIdentifier();
+        this.parseExpected(SyntaxType.EqualsToken);
+
+        const fieldNumber = this.parseLiteral();
+        if (!isIntegerLiteral(fieldNumber)) {
+            throw new Error(`invalid field number type ${fieldNumber.kind}`);
+        }
+        mapField.number = fieldNumber;
+        this.parseExpected(SyntaxType.SemicolonToken);
+
+        this.finishNode(mapField);
+        return mapField;
     }
 
     private parseEnumBodyStatement(): Statement {
@@ -207,7 +373,6 @@ export default class Parser {
             const modifier = <Modifier>this.createNode(SyntaxType.RepeatedKeyword, this.lexer.getTokenPosition());
             this.parseExpected(SyntaxType.RepeatedKeyword);
             this.finishNode(modifier);
-
             fieldStatement.modifiers = this.createNodeArray([modifier]);
         }
 
@@ -259,19 +424,22 @@ export default class Parser {
         const fullIdentifier = <FullIdentifier>this.createNode(SyntaxType.FullIdentifier, this.lexer.getStartPosition());
 
         if (this.token() === SyntaxType.DotToken) {
+            // TODO(dkushner): Register this as a modifier because it affects the way we resolve.
             this.parseExpected(SyntaxType.DotToken);
         }
 
         const qualifiers = [];
         let current: Identifier;
-        do {
+        while (this.token() === SyntaxType.Identifier || this.lexer.isReservedWord()) {
             current = this.parseIdentifier();
 
             if (this.token() == SyntaxType.DotToken) {
                 this.parseExpected(SyntaxType.DotToken);
                 qualifiers.push(current);
+            } else {
+                break;
             }
-        } while (this.token() === SyntaxType.Identifier || this.lexer.isReservedWord());
+        }
 
         fullIdentifier.qualifiers = this.createNodeArray(qualifiers);
         fullIdentifier.terminal = current;
@@ -291,6 +459,53 @@ export default class Parser {
         this.finishNode(identifier);
         this.nextToken();
         return identifier;
+    }
+
+    private parseOneofStatement(): OneofStatement {
+        const oneofStatement = <OneofStatement>this.createNode(SyntaxType.OneofStatement, this.lexer.getTokenPosition());
+
+        this.parseExpected(SyntaxType.OneofKeyword);
+        oneofStatement.name = <OneofName>this.parseIdentifier();
+        this.parseExpected(SyntaxType.OpenBraceToken);
+
+        const statements = [];
+        while (this.token() !== SyntaxType.CloseBraceToken) {
+            const statement = this.parseOneofBodyStatement();
+            statements.push(<OneofFieldStatement>statement);
+        }
+        this.parseExpected(SyntaxType.CloseBraceToken);
+
+        oneofStatement.fields = this.createNodeArray(statements);
+
+        this.finishNode(oneofStatement);
+        return oneofStatement;
+    }
+
+    private parseOneofBodyStatement(): Statement {
+        switch (this.token()) {
+            case SyntaxType.SemicolonToken:
+                return this.parseEmptyStatement();
+            case SyntaxType.Identifier:
+            case SyntaxType.DotToken:
+            case SyntaxType.DoubleKeyword:
+            case SyntaxType.FloatKeyword:
+            case SyntaxType.Int32Keyword:
+            case SyntaxType.Int64Keyword:
+            case SyntaxType.Uint32Keyword:
+            case SyntaxType.Uint64Keyword:
+            case SyntaxType.Sint32Keyword:
+            case SyntaxType.Sint64Keyword:
+            case SyntaxType.Fixed32Keyword:
+            case SyntaxType.Fixed64Keyword:
+            case SyntaxType.Sfixed32Keyword:
+            case SyntaxType.Sfixed64Keyword:
+            case SyntaxType.BoolKeyword:
+            case SyntaxType.StringKeyword:
+            case SyntaxType.BytesKeyword:
+                return this.parseFieldStatement();
+            default:
+                throw new Error(`expected oneof field statement but got ${this.token()}`);
+        }
     }
 
     private parseEnumDefinition(): EnumDefinition {

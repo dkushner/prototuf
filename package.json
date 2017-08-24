@@ -44,6 +44,7 @@
     "chai": "^4.1.1",
     "clime": "^0.5.1",
     "lodash": "^4.17.4",
+    "node-glob": "^1.2.0",
     "protobufjs": "^6.8.0",
     "resolve": "^1.4.0"
   }

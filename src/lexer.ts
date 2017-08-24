@@ -78,6 +78,7 @@ const TEXT_TO_TOKEN: Map<string, SyntaxType> = new Map([
     ['package', SyntaxType.PackageKeyword],
     ['true', SyntaxType.TrueKeyword],
     ['false', SyntaxType.FalseKeyword],
+    ['map', SyntaxType.MapKeyword],
     ['repeated', SyntaxType.RepeatedKeyword],
     ['double', SyntaxType.DoubleKeyword],
     ['float', SyntaxType.FloatKeyword],
@@ -93,7 +94,9 @@ const TEXT_TO_TOKEN: Map<string, SyntaxType> = new Map([
     ['sfixed64', SyntaxType.Sfixed64Keyword],
     ['bool', SyntaxType.BoolKeyword],
     ['string', SyntaxType.StringKeyword],
-    ['bytes', SyntaxType.BytesKeyword]
+    ['bytes', SyntaxType.BytesKeyword],
+    ['oneof', SyntaxType.OneofKeyword],
+    ['service', SyntaxType.ServiceKeyword]
 ]);
 
 

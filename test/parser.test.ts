@@ -1,7 +1,10 @@
 import {} from 'jest';
 import { assert } from 'chai';
 import Parser from '../src/parser';
-import { MessageDefinition, EnumDefinition, EnumFieldStatement } from '../src/language';
+import {
+    MessageDefinition, EnumDefinition, EnumFieldStatement,
+    OneofStatement, MapFieldStatement, SyntaxType, TypeReference
+} from '../src/language';
 import * as dedent from 'dedent';
 
 describe('parser', () => {
@@ -119,5 +122,68 @@ describe('parser', () => {
         assert.deepEqual(got, expected);
     });
 
-    it('parses oneof field statements correctly', () => { });
+    it('parses map field statements correctly', () => {
+        const sample = dedent`
+            syntax = "proto3";
+
+            message TestMessage {
+                map<int64, some.package.Value> map = 1;
+            }
+        `;
+
+        const parser = new Parser(sample);
+        const sourceFile = parser.parseSourceFile('test.proto');
+        assert.lengthOf(sourceFile.statements, 1);
+
+        const message = <MessageDefinition>sourceFile.statements[0];
+        assert.lengthOf(message.body, 1);
+
+        const map = <MapFieldStatement>message.body[0];
+        const mapSpan = sample.substring(map.start, map.end);
+
+        assert.equal(map.name.text, 'map');
+        assert.equal(map.key.kind, SyntaxType.Int64Keyword);
+        assert.equal((map.type as TypeReference).terminal.text, 'Value');
+        assert.equal(mapSpan, `map<int64, some.package.Value> map = 1;`);
+    });
+
+    it('parses oneof field statements correctly', () => {
+        const sample = dedent`
+            syntax = "proto3";
+
+            message TestMessage {
+                oneof test {
+                    string word = 1;
+                    int32 number = 2;
+                }
+            }
+        `;
+
+        const parser = new Parser(sample);
+        const sourceFile = parser.parseSourceFile('test.proto');
+
+        assert.lengthOf(sourceFile.statements, 1);
+
+        const message = <MessageDefinition>sourceFile.statements[0];
+        assert.lengthOf(message.body, 1);
+
+        const oneof = <OneofStatement>message.body[0];
+        const oneofSpan = sample.substring(oneof.start, oneof.end);
+        assert.lengthOf(oneof.fields, 2);
+        assert.equal(oneof.name.text, 'test');
+        assert.equal(dedent(oneofSpan), dedent`
+            oneof test {
+                string word = 1;
+                int32 number = 2;
+            }
+        `);
+
+        const firstField = oneof.fields[0];
+        const firstSpan = sample.substring(firstField.start, firstField.end);
+        assert.equal(firstSpan, `string word = 1;`);
+
+        const secondField = oneof.fields[1];
+        const secondSpan = sample.substring(secondField.start, secondField.end);
+        assert.equal(secondSpan, `int32 number = 2;`);
+    });
 });
