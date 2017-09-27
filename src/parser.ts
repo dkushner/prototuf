@@ -1,13 +1,18 @@
-import Lexer, { SyntaxTarget } from './lexer';
-import {
-    Node, NodeArray, Statement, Identifier, FullIdentifier, SourceFile, Modifier, SyntaxType, Token,
-    SourceFileStatement, SyntaxStatement, EmptyStatement, OptionStatement, PackageStatement,
-    EnumDefinition, MessageDefinition, Literal, Constant, StringLiteral, DecimalLiteral, BooleanLiteral,
-    HexLiteral, IntegerLiteral, OctalLiteral, FloatLiteral, MessageName, MessageBodyStatement,
-    TopLevelDefinition, FieldStatement, KnownType, TypeReference, FieldName, EnumFieldStatement, EnumName,
-    EnumBodyStatement, OneofStatement, OneofName, OneofFieldStatement, MapFieldStatement, MapName, KeyType,
-    ImportStatement, ServiceDefinition, ServiceName, ServiceBodyStatement, RPCStatement, RPCName, RPCBodyStatement
-} from './language';
+import { Lexer } from './lexer';
+import { SyntaxType, SyntaxTarget } from './language';
+import { Node, NodeArray, Statement, EmptyStatement, Modifier, Literal, Token, Identifier, FullIdentifier } from './language';
+import { Type, TypeReference, KnownType, Constant } from './language';
+import { SourceFile, SourceFileStatement } from './language';
+import { ServiceDefinition, ServiceName, ServiceBodyStatement } from './language';
+import { RPCStatement, RPCName, RPCBodyStatement } from './language';
+import { MessageDefinition, MessageName, MessageBodyStatement } from './language';
+import { ImportStatement, SyntaxStatement, OptionStatement, PackageStatement } from './language';
+import { StringLiteral, DecimalLiteral, OctalLiteral, FloatLiteral, IntegerLiteral, HexLiteral, BooleanLiteral } from './language';
+import { MapFieldStatement, OneofStatement, OneofName, OneofFieldStatement } from './language';
+import { EnumDefinition, EnumName, EnumFieldStatement, EnumBodyStatement } from './language';
+import { FieldStatement, FieldName } from './language';
+
+import { isKeyType, isIntegerLiteral, isKnownType } from './utils';
 
 const enum ParsingContext {
     SourceElements,
@@ -15,58 +20,17 @@ const enum ParsingContext {
     EnumMembers
 }
 
-export function isMessageBodyStatement(node: Node): node is MessageBodyStatement {
-    return node.kind === SyntaxType.OneofStatement ||
-        node.kind === SyntaxType.OptionStatement ||
-        node.kind === SyntaxType.FieldStatement ||
-        node.kind === SyntaxType.EnumDefinition ||
-        node.kind === SyntaxType.MessageDefinition ||
-        node.kind === SyntaxType.MapFieldStatement ||
-        node.kind === SyntaxType.ReservedStatement ||
-        node.kind === SyntaxType.EmptyStatement;
-}
-
-export function isTopLevelDefinition(node: Node): node is TopLevelDefinition {
-    return node.kind === SyntaxType.EnumDefinition ||
-        node.kind === SyntaxType.ServiceDefinition ||
-        node.kind === SyntaxType.MessageDefinition;
-}
-
-export function isSourceFileStatement(node: Node): node is SourceFileStatement {
-    return node.kind === SyntaxType.ImportStatement ||
-        node.kind === SyntaxType.PackageStatement ||
-        node.kind === SyntaxType.OptionStatement ||
-        node.kind === SyntaxType.EmptyStatement ||
-        isTopLevelDefinition(node);
-}
-
-export function isIntegerLiteral(node: Node): node is IntegerLiteral {
-    return node.kind === SyntaxType.DecimalLiteral ||
-        node.kind === SyntaxType.OctalLiteral ||
-        node.kind === SyntaxType.HexLiteral;
-}
-
-export function isKeyType(node: Node): node is KeyType {
-    return isKnownType(node) &&
-        node.kind !== SyntaxType.BytesKeyword &&
-        node.kind !== SyntaxType.DoubleKeyword &&
-        node.kind !== SyntaxType.FloatKeyword;
-}
-
-export function isKnownType(node: Node): node is KnownType {
-    return (node.kind >= SyntaxType.FirstKnown) && (node.kind <= SyntaxType.LastKnown);
-}
-
 /**
  * Implements a Protobuf parser.
  * Note that if you are implementing a parser function, you must advance the cursor after
  * you have completed parsing your node by calling either parseExpected or nextToken.
  */
-export default class Parser {
+export class Parser {
     private lexer: Lexer;
     private currentToken: SyntaxType;
     private context: ParsingContext;
     private nodeCount: number;
+    private identifierCount: number;
 
     constructor(sourceText: string) {
         this.lexer = new Lexer(SyntaxTarget.PROTO3, true);
@@ -101,28 +65,18 @@ export default class Parser {
 
         const statements: SourceFileStatement[] = [];
         while (this.token() !== SyntaxType.EndOfFileToken) {
-            const statement = this.parseStatement();
-            if (!isSourceFileStatement(statement)) {
-                throw new Error(`expected source level statement but got ${statement.kind}`);
-            }
+            const statement = <SourceFileStatement>this.parseSourceFileStatement();
             statements.push(statement);
         }
 
         sourceFile.statements = this.createNodeArray(statements);
+        sourceFile.nodeCount = this.nodeCount;
 
         this.finishNode(sourceFile);
         return sourceFile;
     }
 
-    public tryParse<T>(callback: () => T): T {
-        return this.stateGuard(callback, false);
-    }
-
-    public <T>(callback: () => T): T {
-        return this.stateGuard(callback, true);
-    }
-
-    private parseStatement(): Statement {
+    private parseSourceFileStatement(): SourceFileStatement {
         switch (this.token()) {
             case SyntaxType.OptionKeyword:
                 return this.parseOptionStatement();
@@ -270,9 +224,11 @@ export default class Parser {
         const statements = [];
         while (this.token() !== SyntaxType.CloseBraceToken) {
             const statement = this.parseServiceBodyStatement();
-            statements.push(<MessageBodyStatement>statement);
+            statements.push(<ServiceBodyStatement>statement);
         }
         this.parseExpected(SyntaxType.CloseBraceToken);
+
+        serviceDefinition.body = this.createNodeArray(statements);
 
         this.finishNode(serviceDefinition);
         return serviceDefinition;
@@ -424,8 +380,10 @@ export default class Parser {
         const fullIdentifier = <FullIdentifier>this.createNode(SyntaxType.FullIdentifier, this.lexer.getStartPosition());
 
         if (this.token() === SyntaxType.DotToken) {
-            // TODO(dkushner): Register this as a modifier because it affects the way we resolve.
+            const modifier = <Modifier>this.createNode(SyntaxType.DotToken, this.lexer.getTokenPosition());
             this.parseExpected(SyntaxType.DotToken);
+            this.finishNode(modifier);
+            fullIdentifier.modifiers = this.createNodeArray([modifier]);
         }
 
         const qualifiers = [];
@@ -458,6 +416,8 @@ export default class Parser {
         identifier.text = this.lexer.getTokenText();
         this.finishNode(identifier);
         this.nextToken();
+
+        this.identifierCount++;
         return identifier;
     }
 
@@ -714,6 +674,8 @@ export default class Parser {
     }
 
     private createNode< Kind extends SyntaxType>(kind: SyntaxType, position?: number): Node | Token<Kind> | Identifier {
+        this.nodeCount++;
+
         if (position < 0) {
             position = this.lexer.getStartPosition();
         }
@@ -742,7 +704,7 @@ export default class Parser {
         return kind >= SyntaxType.FirstNode && kind <= SyntaxType.LastNode;
     }
 
-    private finishNode < T extends Node > (node: T, end?: number): T {
+    private finishNode<T extends Node>(node: T, end?: number): T {
         node.end = (end === undefined) ? this.lexer.getStartPosition() : end;
         return node;
     }

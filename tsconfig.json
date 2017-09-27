@@ -4,18 +4,19 @@
         "target": "es6",
         "noImplicitAny": true,
         "moduleResolution": "node",
-        "experimentalDecorators": true,
+        "noEmitOnError": true,
+        "noImplicitThis": true,
+        "alwaysStrict": true,
+        "inlineSourceMap": true,
+        "pretty": true,
+        "preserveConstEnums": true,
+        "stripInternal": true,
         "sourceMap": true,
+        "experimentalDecorators": true,
         "outDir": "dist",
-        "baseUrl": ".",
-        "paths": {
-            "*": [
-                "node_modules/*",
-                "src/types/*"
-            ]
-        }
+        "baseUrl": "."
     },
     "include": [
-        "src/**/*"
+        "src/**/*.ts"
     ]
 }

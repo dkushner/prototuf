@@ -1,4 +1,7 @@
-import * as pb from 'protobufjs';
+export enum SyntaxTarget {
+    PROTO2,
+    PROTO3
+}
 
 export interface Span {
     start: number;
@@ -8,16 +11,13 @@ export interface Span {
 export const enum CharacterCodes {
     Null = 0,
     MaxCharacter = 0x7F,
-
-    LineFeed = 0x0A,              // \n
-    CarriageReturn = 0x0D,        // \r
+    LineFeed = 0x0A,
+    CarriageReturn = 0x0D,
     LineSeparator = 0x2028,
     ParagraphSeparator = 0x2029,
     NextLine = 0x0085,
-
-    // Unicode 3.0 space characters
-    Space = 0x0020,   // " "
-    NonBreakingSpace = 0x00A0,   //
+    Space = 0x0020,
+    NonBreakingSpace = 0x00A0,
     EnQuad = 0x2000,
     EmQuad = 0x2001,
     EnSpace = 0x2002,
@@ -34,9 +34,7 @@ export const enum CharacterCodes {
     IdeographicSpace = 0x3000,
     MathematicalSpace = 0x205F,
     Ogham = 0x1680,
-
     Underscore = 0x5F,
-
     Zero = 0x30,
     One = 0x31,
     Two = 0x32,
@@ -47,7 +45,6 @@ export const enum CharacterCodes {
     Seven = 0x37,
     Eight = 0x38,
     Nine = 0x39,
-
     A = 0x61,
     B = 0x62,
     C = 0x63,
@@ -74,7 +71,6 @@ export const enum CharacterCodes {
     X = 0x78,
     Y = 0x79,
     Z = 0x7A,
-
     CapitalA = 0x41,
     CapitalB = 0x42,
     CapitalC = 0x43,
@@ -101,7 +97,6 @@ export const enum CharacterCodes {
     CapitalX = 0x58,
     CapitalY = 0x59,
     CapitalZ = 0x5a,
-
     Ampersand = 0x26,             // &
     Asterisk = 0x2A,              // *
     At = 0x40,                    // @
@@ -132,7 +127,6 @@ export const enum CharacterCodes {
     SingleQuote = 0x27,           // '
     Slash = 0x2F,                 // /
     Tilde = 0x7E,                 // ~
-
     Backspace = 0x08,             // \b
     FormFeed = 0x0C,              // \f
     ByteOrderMark = 0xFEFF,
@@ -167,8 +161,6 @@ export const enum SyntaxType {
     MinusToken,
     PlusToken,
     CommaToken,
-    // Identifiers
-    Identifier,
     // Reserved
     MessageKeyword,
     OptionKeyword,
@@ -205,6 +197,7 @@ export const enum SyntaxType {
     BytesKeyword,
     MaxKeyword,
     // Parse Nodes
+    Identifier,
     FullIdentifier,
     // Literals
     DecimalLiteral,
@@ -234,7 +227,7 @@ export const enum SyntaxType {
     // Markers
     FirstReserved = MessageKeyword,
     LastReserved = MaxKeyword,
-    FirstNode = FullIdentifier,
+    FirstNode = Identifier,
     LastNode = FieldOption,
     FirstKnown = DoubleKeyword,
     LastKnown = BytesKeyword
@@ -247,10 +240,12 @@ export interface Node extends Span {
     kind: SyntaxType;
     modifiers?: NodeArray<Modifier>;
     parent?: Node;
+    symbol?: Symbol;
 }
 
 export type Modifier = Token<SyntaxType.PublicKeyword> |
     Token<SyntaxType.WeakKeyword> |
+    Token<SyntaxType.DotToken> |
     Token<SyntaxType.RepeatedKeyword> |
     Token<SyntaxType.PlusToken> |
     Token<SyntaxType.MinusToken>;
@@ -611,6 +606,7 @@ export interface ServiceDefinition extends TopLevelDefinition {
     body: NodeArray<ServiceBodyStatement>;
 }
 
+export type RPCBodyStatement = OptionStatement | EmptyStatement;
 
 /**
  * Represents an RPC statement as part of a service.
@@ -621,7 +617,7 @@ export interface RPCStatement extends Statement {
     sendType: TypeReference;
 
     receiveType: TypeReference;
-    body?: NodeArray<OptionStatement | EmptyStatement>;
+    body?: NodeArray<RPCBodyStatement>;
 }
 
 /**
@@ -640,6 +636,61 @@ export interface SourceFile extends Node {
     endOfFileToken: Token<SyntaxType.EndOfFileToken>;
     text: string;
     syntax: SyntaxStatement;
+    package?: PackageStatement;
     statements: NodeArray<SourceFileStatement>;
     dependenies: string[];
+
+    /* @internal */
+    lineStarts: number[];
+    /* @internal */
+    nodeCount: number;
+    /* @internal */
+    identifierCount: number;
+    /* @internal */
+    symbolCount: number;
+}
+
+/**
+ * Represents a source location in line and column number.
+ */
+export interface Location {
+    line: number;
+    character: number;
+}
+
+export const enum SymbolType {
+    Message,
+    Enum,
+    MessageField,
+    EnumField
+}
+
+/**
+ * Map of symbol names to definitions.
+ */
+export type SymbolTable = Map<string, Symbol>;
+
+/**
+ * Represents a symbol appearing in source.
+ */
+export interface Symbol {
+    /**
+     * ID of the symbol, unique to a project unit.
+     */
+    id: number;
+
+    /**
+     * Name of symbol.
+     */
+    name: string;
+    /**
+     * Type of symbol.
+     */
+    type: SymbolType;
+
+    parent?: Symbol;
+    /**
+     * Table of nested symbols if symbol includes a scope.
+     */
+    members?: SymbolTable;
 }

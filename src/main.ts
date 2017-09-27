@@ -5,5 +5,4 @@ import { CLI, Shim } from 'clime';
 
 const cli = new CLI('analyze', Path.join(__dirname, 'commands'));
 const shim = new Shim(cli);
-
 shim.execute(process.argv);

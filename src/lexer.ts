@@ -1,9 +1,13 @@
-import { SyntaxType, CharacterCodes } from './language';
-
-export enum SyntaxTarget {
-    PROTO2,
-    PROTO3
-}
+import { SyntaxType, CharacterCodes, SyntaxTarget } from './language';
+import {
+    isSingleLineWhitespace,
+    isLineBreak,
+    isIdentifierPart,
+    isIdentifierStart,
+    isDecimal,
+    isOctalDigit,
+    utf16EncodeAsString
+} from './utils';
 
 export const enum NumericFlags {
     None = 0,
@@ -11,58 +15,6 @@ export const enum NumericFlags {
     Octal = 1 << 2,             // e.g. `0777`
     Hex = 1 << 3,                // e.g. `0x00000000`
     Float = 1 << 4              // e.g. 0.1234
-}
-
-function isSingleLineWhitespace(character: number): boolean {
-    return character === CharacterCodes.Space ||
-        character === CharacterCodes.Tab ||
-        character === CharacterCodes.VerticalTab ||
-        character === CharacterCodes.FormFeed ||
-        character === CharacterCodes.NonBreakingSpace ||
-        character === CharacterCodes.Ogham ||
-        character >= CharacterCodes.EnQuad && character <= CharacterCodes.ZeroWidthSpace ||
-        character === CharacterCodes.NarrowNoBreakSpace ||
-        character === CharacterCodes.MathematicalSpace ||
-        character === CharacterCodes.IdeographicSpace ||
-        character === CharacterCodes.ByteOrderMark;
-}
-
-function isDecimal(character: number): boolean {
-    return (character >= CharacterCodes.Zero) && (character <= CharacterCodes.Nine);
-}
-
-function isLineBreak(character: number): boolean {
-    return character === CharacterCodes.LineFeed ||
-        character === CharacterCodes.CarriageReturn ||
-        character === CharacterCodes.LineSeparator ||
-        character === CharacterCodes.ParagraphSeparator;
-}
-
-function isOctalDigit(character: number): boolean {
-    return (character >= CharacterCodes.Zero) && (character <= CharacterCodes.Seven);
-}
-
-function isIdentifierStart(character: number): boolean {
-    return (character >= CharacterCodes.A && character <= CharacterCodes.Z) ||
-        (character >= CharacterCodes.CapitalA && character <= CharacterCodes.CapitalZ);
-}
-
-function isIdentifierPart(character: number): boolean {
-    return (character === CharacterCodes.Underscore) ||
-        (character >= CharacterCodes.A && character <= CharacterCodes.Z) ||
-        (character >= CharacterCodes.CapitalA && character <= CharacterCodes.CapitalZ) ||
-        (character >= CharacterCodes.Zero && character <= CharacterCodes.Nine);
-}
-
-function utf16EncodeAsString(codePoint: number): string {
-    if (codePoint <= 65535) {
-        return String.fromCharCode(codePoint);
-    }
-
-    const codeUnit1 = Math.floor((codePoint - 65536) / 1024) + 0xD800;
-    const codeUnit2 = ((codePoint - 65536) % 1024) + 0xDC00;
-
-    return String.fromCharCode(codeUnit1, codeUnit2);
 }
 
 const TEXT_TO_TOKEN: Map<string, SyntaxType> = new Map([
@@ -95,16 +47,16 @@ const TEXT_TO_TOKEN: Map<string, SyntaxType> = new Map([
     ['bool', SyntaxType.BoolKeyword],
     ['string', SyntaxType.StringKeyword],
     ['bytes', SyntaxType.BytesKeyword],
+    ['stream', SyntaxType.StreamKeyword],
     ['oneof', SyntaxType.OneofKeyword],
     ['service', SyntaxType.ServiceKeyword]
 ]);
-
 
 export interface ErrorHandler {
     (message: string): void;
 }
 
-export default class Lexer {
+export class Lexer {
     private text: string;
     private target: SyntaxTarget;
     private skipTrivia: boolean;
@@ -156,11 +108,6 @@ export default class Lexer {
 
     public hasPrecedingLineBreak(): boolean {
         return this.precedingLineBreak;
-    }
-
-    // This is kept internal because its value may depend on the target syntax.
-    public isIdentifier(): boolean {
-        return this.token === SyntaxType.Identifier;
     }
 
     // This is kept internal because its value may depend on the target syntax.
@@ -268,7 +215,7 @@ export default class Lexer {
                             const character = this.text.charCodeAt(this.position);
 
                             if (character === CharacterCodes.Asterisk && this.text.charCodeAt(this.position + 1) === CharacterCodes.Slash) {
-                                this.position++;
+                                this.position += 2;
                                 commentClosed = true;
                                 break;
                             }
@@ -480,37 +427,6 @@ export default class Lexer {
         return this.stateGuard(callback, true);
     }
 
-    public scanRange<T>(start: number, length: number, callback: () => T): T {
-        const end = this.end;
-        const position = this.position;
-        const startPosition = this.startPosition;
-        const tokenPosition = this.tokenPosition;
-        const token = this.token;
-        const precedingLineBreak = this.precedingLineBreak;
-        const tokenValue = this.tokenValue;
-        const extendedEscape = this.extendedEscape;
-        const unterminated = this.unterminated;
-
-        this.setText(this.text, start, length);
-        const result = callback();
-
-        this.end = end;
-        this.position = position;
-        this.startPosition = startPosition;
-        this.tokenPosition = tokenPosition;
-        this.token = token;
-        this.precedingLineBreak = precedingLineBreak;
-        this.tokenValue = tokenValue;
-        this.extendedEscape = extendedEscape;
-        this.unterminated = unterminated;
-
-        return result;
-    }
-
-    public tryScan<T>(callback: () => T): T {
-        return this.stateGuard(callback, false);
-    }
-
     private getIdentifierToken(): SyntaxType {
         const keyword = TEXT_TO_TOKEN.get(this.getTokenValue());
         if (!keyword) {
@@ -559,7 +475,7 @@ export default class Lexer {
                 result += this.text.substring(start, this.position);
                 this.unterminated = true;
                 this.error(`unterminated string literal`);
-                continue;
+                break;
             }
 
             const character = this.text.charCodeAt(this.position);

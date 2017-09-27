@@ -1,13 +1,14 @@
 import * as path from 'path';
 import * as fs from 'fs';
+
 import { SourceFile } from './language';
-import Parser from './parser';
+import { Parser } from './parser';
 
 /**
  * A project represents collection of protobuf source files and include
  * directories that comprise a single compilation environment.
  */
-export default class Project {
+export class Project {
     private commonRoot: string;
 
     /**

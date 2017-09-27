@@ -4,15 +4,18 @@
   "description": "Protobuf project analyzer and linter.",
   "main": "index.js",
   "scripts": {
-    "build": "npm run compile && npm run lint",
+    "build": "npm run compile && npm run lint && npm run docs",
     "watch": "concurrently -k -p \"[{name}]\" -n \"compile,test\" -c \"yellow.bold,cyan.bold\" \"npm run watch:compile\" \"npm run watch:test\"",
     "compile": "tsc",
     "watch:compile": "tsc -w",
     "watch:test": "jest --watchAll",
-    "test": "jest --forceExit --coverage",
-    "lint": "tslint -c tslint.json -p tsconfig.json"
+    "test": "jest --forceExit --coverage --coverageDirectory coverage --coverageReporters json --coverageReporters html",
+    "lint": "tslint -c tslint.json -p tsconfig.json",
+    "clean": "rm -r ./dist",
+    "docs": "typedoc --out dist/docs --mode modules ./src"
   },
   "jest": {
+    "mapCoverage": true,
     "moduleFileExtensions": [
       "ts",
       "js"
@@ -29,15 +32,16 @@
   "license": "ISC",
   "devDependencies": {
     "@types/chai": "^4.0.2",
-    "@types/jest": "^20.0.6",
+    "@types/jest": "^20.0.8",
     "@types/lodash": "^4.14.71",
     "@types/node": "^8.0.19",
     "concurrently": "^3.5.0",
     "dedent": "^0.7.0",
     "jest": "^20.0.4",
     "source-map-support": "^0.4.16",
-    "ts-jest": "^20.0.10",
+    "ts-jest": "^20.0.14",
     "tslint": "^5.6.0",
+    "typedoc": "^0.8.0",
     "typescript": "^2.4.2"
   },
   "dependencies": {

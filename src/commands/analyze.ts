@@ -1,8 +1,5 @@
 import { Command, command, param, params, Options, option } from 'clime';
-import Analyzer from '../analyzer';
 import * as path from 'path';
-
-import * as protobuf from 'protobufjs';
 
 export class AnalyzerOptions extends Options {
     @option({
@@ -47,4 +44,3 @@ export default class extends Command {
         options: AnalyzerOptions
     ) { }
 }
-
