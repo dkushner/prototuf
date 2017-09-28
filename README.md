@@ -23,7 +23,8 @@ provided source.
 
 #### Binder
 Binding is carried out by the `Binder` class instance. The binding step
-validates the correctness of an AST. It is provided a `Project`. It then parses
-and scans each file in the provided project, building an associated symbol
-table noting the location and attributes of each defined symbol. A final pass
-validates the correctness of all type references included in the project. 
+validates the correctness of an AST by building a corresponding symbol tree and
+resolving type/member references. It is provided a `Project` instance which it
+uses to retrieve source files and resolve external references during binding.
+A final pass validates the correctness of all type references included in the 
+project. 
