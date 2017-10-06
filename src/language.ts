@@ -638,7 +638,7 @@ export interface SourceFile extends Node {
     syntax: SyntaxStatement;
     package?: PackageStatement;
     statements: NodeArray<SourceFileStatement>;
-    dependenies: string[];
+    dependencies: string[];
 
     /* @internal */
     lineStarts: number[];
@@ -659,10 +659,14 @@ export interface Location {
 }
 
 export const enum SymbolType {
+    Package,
     Message,
     Enum,
+    Service,
+    RPC,
     MessageField,
-    EnumField
+    EnumField,
+    OneofField
 }
 
 /**
